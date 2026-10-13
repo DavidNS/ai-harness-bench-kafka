@@ -16,8 +16,10 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
+import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
+import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.KafkaClient;
 import org.apache.kafka.clients.NetworkClientUtils;
 import org.apache.kafka.clients.RequestCompletionHandler;
@@ -26,6 +28,8 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.DisconnectException;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.metrics.Sensor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -44,6 +48,10 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
+
+import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION;
+import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_METRIC_GROUP_PREFIX;
 
 /**
  * A wrapper around the {@link org.apache.kafka.clients.NetworkClient} to handle network poll and send operations.
@@ -137,7 +145,7 @@ public class NetworkClientDelegate implements AutoCloseable {
         return true;
     }
 
-    private void checkDisconnects(final long currentTimeMs) {
+    public void checkDisconnects(final long currentTimeMs) {
         // Check the connection of the unsent request. Disconnect the disconnected node if it is unable to be connected.
         Iterator<UnsentRequest> iter = unsentRequests.iterator();
         while (iter.hasNext()) {
@@ -186,6 +194,25 @@ public class NetworkClientDelegate implements AutoCloseable {
         return client.connectionFailed(node) && client.connectionDelay(node, time.milliseconds()) > 0;
     }
 
+    /**
+     * Check if the node is disconnected and unavailable for immediate reconnection (i.e. if it is in
+     * reconnect backoff window following the disconnect).
+     *
+     * @see NetworkClientUtils#isUnavailable(KafkaClient, Node, Time)
+     */
+    public boolean isUnavailable(final Node node) {
+        return NetworkClientUtils.isUnavailable(client, node, time);
+    }
+
+    /**
+     * Checks for an authentication error on a given node and throws the exception if it exists.
+     *
+     * @see NetworkClientUtils#maybeThrowAuthFailure(KafkaClient, Node)
+     */
+    public void maybeThrowAuthFailure(final Node node) {
+        NetworkClientUtils.maybeThrowAuthFailure(client, node);
+    }
+
     public void close() throws IOException {
         this.client.close();
     }
@@ -197,13 +224,39 @@ public class NetworkClientDelegate implements AutoCloseable {
         this.unsentRequests.addAll(requests);
     }
 
+    /**
+     * Enqueues the unsent requests of the given {@link PollResult} so they are sent on the next {@link #poll}.
+     *
+     * @return the time (in milliseconds) until the request manager that produced the result wants to be polled again
+     */
+    public long addAll(PollResult pollResult) {
+        Objects.requireNonNull(pollResult);
+        addAll(pollResult.unsentRequests);
+        return pollResult.timeUntilNextPollMs;
+    }
+
     public static class PollResult {
+
+        public static final long WAIT_FOREVER = Long.MAX_VALUE;
+        public static final PollResult EMPTY = new PollResult(WAIT_FOREVER);
         public final long timeUntilNextPollMs;
         public final List<UnsentRequest> unsentRequests;
 
-        public PollResult(final long timeMsTillNextPoll, final List<UnsentRequest> unsentRequests) {
-            this.timeUntilNextPollMs = timeMsTillNextPoll;
+        public PollResult(final long timeUntilNextPollMs, final List<UnsentRequest> unsentRequests) {
+            this.timeUntilNextPollMs = timeUntilNextPollMs;
             this.unsentRequests = Collections.unmodifiableList(unsentRequests);
+        }
+
+        public PollResult(final List<UnsentRequest> unsentRequests) {
+            this(WAIT_FOREVER, unsentRequests);
+        }
+
+        public PollResult(final UnsentRequest unsentRequest) {
+            this(Collections.singletonList(unsentRequest));
+        }
+
+        public PollResult(final long timeUntilNextPollMs) {
+            this(timeUntilNextPollMs, Collections.emptyList());
         }
     }
     public static class UnsentRequest {
@@ -252,6 +305,36 @@ public class NetworkClientDelegate implements AutoCloseable {
                     ", timer=" + timer +
                     '}';
         }
+    }
+
+    /**
+     * Creates a {@link Supplier} for deferred creation during invocation by
+     * {@link ConsumerNetworkThread}. The {@link KafkaClient} and the delegate are only built on the first
+     * {@link Supplier#get()}, which is expected to happen on the network thread, and are cached after that.
+     */
+    public static Supplier<NetworkClientDelegate> supplier(final Time time,
+                                                           final LogContext logContext,
+                                                           final ConsumerMetadata metadata,
+                                                           final ConsumerConfig config,
+                                                           final ApiVersions apiVersions,
+                                                           final Metrics metrics,
+                                                           final FetchMetricsManager fetchMetricsManager,
+                                                           final Sensor throttleTimeSensor) {
+        return new CachedSupplier<NetworkClientDelegate>() {
+            @Override
+            protected NetworkClientDelegate create() {
+                KafkaClient client = ClientUtils.createNetworkClient(config,
+                        metrics,
+                        CONSUMER_METRIC_GROUP_PREFIX,
+                        logContext,
+                        apiVersions,
+                        time,
+                        CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION,
+                        metadata,
+                        throttleTimeSensor);
+                return new NetworkClientDelegate(time, config, logContext, client);
+            }
+        };
     }
 
     public static class FutureCompletionHandler implements RequestCompletionHandler {

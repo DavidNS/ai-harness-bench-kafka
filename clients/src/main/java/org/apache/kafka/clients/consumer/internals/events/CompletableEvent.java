@@ -14,21 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.kafka.clients.consumer.internals;
+package org.apache.kafka.clients.consumer.internals.events;
 
-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
-import org.apache.kafka.clients.consumer.internals.events.ErrorBackgroundEvent;
+import java.util.concurrent.CompletableFuture;
 
-import java.util.Queue;
+/**
+ * An event that can be completed: the thread that processes the event completes the {@link CompletableFuture future}
+ * and the thread that created the event can wait on it.
+ *
+ * @param <T> Type of the result of the event
+ */
+public interface CompletableEvent<T> {
 
-public class ErrorEventHandler {
-    private final Queue<BackgroundEvent> backgroundEventQueue;
-
-    public ErrorEventHandler(Queue<BackgroundEvent> backgroundEventQueue) {
-        this.backgroundEventQueue = backgroundEventQueue;
-    }
-
-    public void handle(Throwable e) {
-        backgroundEventQueue.add(new ErrorBackgroundEvent(e));
-    }
+    CompletableFuture<T> future();
 }

@@ -16,16 +16,23 @@
  */
 package org.apache.kafka.clients.consumer.internals.events;
 
+import org.apache.kafka.clients.consumer.internals.ConsumerUtils;
+import org.apache.kafka.common.KafkaException;
+
 public class ErrorBackgroundEvent extends BackgroundEvent {
 
-    private final Throwable error;
+    private final RuntimeException error;
 
-    public ErrorBackgroundEvent(Throwable error) {
+    /**
+     * @param t Error to report to the application thread; if it is not a {@link RuntimeException}
+     *          it is wrapped in a {@link KafkaException}
+     */
+    public ErrorBackgroundEvent(Throwable t) {
         super(Type.ERROR);
-        this.error = error;
+        this.error = ConsumerUtils.maybeWrapAsKafkaException(t);
     }
 
-    public Throwable error() {
+    public RuntimeException error() {
         return error;
     }
 

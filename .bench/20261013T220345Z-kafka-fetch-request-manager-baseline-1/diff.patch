@@ -1,0 +1,2924 @@
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/KafkaConsumer.java b/clients/src/main/java/org/apache/kafka/clients/consumer/KafkaConsumer.java
+index f8221df36a..d821fd76f8 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/KafkaConsumer.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/KafkaConsumer.java
+@@ -79,7 +79,6 @@ import java.util.regex.Pattern;
+ import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_JMX_PREFIX;
+ import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_METRIC_GROUP_PREFIX;
+ import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createConsumerNetworkClient;
+-import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createFetchConfig;
+ import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createFetchMetricsManager;
+ import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createLogContext;
+ import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createMetrics;
+@@ -753,13 +752,14 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
+                         config.getBoolean(ConsumerConfig.THROW_ON_FETCH_STABLE_OFFSET_UNSUPPORTED),
+                         config.getString(ConsumerConfig.CLIENT_RACK_CONFIG));
+             }
+-            FetchConfig<K, V> fetchConfig = createFetchConfig(config, this.deserializers);
++            FetchConfig fetchConfig = new FetchConfig(config);
+             this.fetcher = new Fetcher<>(
+                     logContext,
+                     this.client,
+                     this.metadata,
+                     this.subscriptions,
+                     fetchConfig,
++                    this.deserializers,
+                     fetchMetricsManager,
+                     this.time);
+             this.offsetFetcher = new OffsetFetcher(logContext,
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/AbstractFetch.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/AbstractFetch.java
+index 4f579bb0e0..9d1f2c5874 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/AbstractFetch.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/AbstractFetch.java
+@@ -37,11 +37,9 @@ import org.slf4j.Logger;
+ import org.slf4j.helpers.MessageFormatter;
+ 
+ import java.io.Closeable;
+-import java.util.ArrayList;
+ import java.util.HashMap;
+ import java.util.HashSet;
+ import java.util.LinkedHashMap;
+-import java.util.List;
+ import java.util.Map;
+ import java.util.Optional;
+ import java.util.Set;
+@@ -50,48 +48,64 @@ import java.util.function.Predicate;
+ import static org.apache.kafka.clients.consumer.internals.FetchUtils.requestMetadataUpdate;
+ 
+ /**
+- * {@code AbstractFetch} represents the basic state and logic for record fetching processing.
+- * @param <K> Type for the message key
+- * @param <V> Type for the message value
++ * {@code AbstractFetch} represents the basic state and logic for record fetching processing. It is independent of
++ * how the requests are actually sent over the network (that is up to the subclasses, via {@link #isUnavailable(Node)}
++ * and {@link #maybeThrowAuthFailure(Node)} and the use of the {@code prepare...Requests} methods), and of how
++ * the fetched data is deserialized (that happens on the thread that consumes the {@link FetchBuffer}).
+  */
+-public abstract class AbstractFetch<K, V> implements Closeable {
++public abstract class AbstractFetch implements Closeable {
+ 
+     private final Logger log;
++    private final IdempotentCloser idempotentCloser = new IdempotentCloser();
+     protected final LogContext logContext;
+-    protected final ConsumerNetworkClient client;
+     protected final ConsumerMetadata metadata;
+     protected final SubscriptionState subscriptions;
+-    protected final FetchConfig<K, V> fetchConfig;
++    protected final FetchConfig fetchConfig;
+     protected final Time time;
+     protected final FetchMetricsManager metricsManager;
+     protected final FetchBuffer fetchBuffer;
+     protected final BufferSupplier decompressionBufferSupplier;
+     protected final Set<Integer> nodesWithPendingFetchRequests;
+-    protected final IdempotentCloser idempotentCloser = new IdempotentCloser();
+ 
+     private final Map<Integer, FetchSessionHandler> sessionHandlers;
+ 
+     public AbstractFetch(final LogContext logContext,
+-                         final ConsumerNetworkClient client,
+                          final ConsumerMetadata metadata,
+                          final SubscriptionState subscriptions,
+-                         final FetchConfig<K, V> fetchConfig,
++                         final FetchConfig fetchConfig,
++                         final FetchBuffer fetchBuffer,
+                          final FetchMetricsManager metricsManager,
+                          final Time time) {
+         this.log = logContext.logger(AbstractFetch.class);
+         this.logContext = logContext;
+-        this.client = client;
+         this.metadata = metadata;
+         this.subscriptions = subscriptions;
+         this.fetchConfig = fetchConfig;
++        this.fetchBuffer = fetchBuffer;
+         this.decompressionBufferSupplier = BufferSupplier.create();
+-        this.fetchBuffer = new FetchBuffer(logContext);
+         this.sessionHandlers = new HashMap<>();
+         this.nodesWithPendingFetchRequests = new HashSet<>();
+         this.metricsManager = metricsManager;
+         this.time = time;
+     }
+ 
++    /**
++     * Check if the node is disconnected and unavailable for immediate reconnection (i.e. if it is in
++     * reconnect backoff window following the disconnect).
++     *
++     * @param node {@link Node} to check for availability
++     * @see NetworkClientUtils#isUnavailable(org.apache.kafka.clients.KafkaClient, Node, Time)
++     */
++    protected abstract boolean isUnavailable(Node node);
++
++    /**
++     * Checks for an authentication error on a given node and throws the exception if it exists.
++     *
++     * @param node {@link Node} to check for a previous {@link org.apache.kafka.common.errors.AuthenticationException}
++     * @see NetworkClientUtils#maybeThrowAuthFailure(org.apache.kafka.clients.KafkaClient, Node)
++     */
++    protected abstract void maybeThrowAuthFailure(Node node);
++
+     /**
+      * Return whether we have any completed fetches pending return to the user. This method is thread-safe. Has
+      * visibility for testing.
+@@ -117,9 +131,9 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+      * @param data {@link FetchSessionHandler.FetchRequestData} that represents the session data
+      * @param resp {@link ClientResponse} from which the {@link FetchResponse} will be retrieved
+      */
+-    protected void handleFetchResponse(final Node fetchTarget,
+-                                       final FetchSessionHandler.FetchRequestData data,
+-                                       final ClientResponse resp) {
++    protected void handleFetchSuccess(final Node fetchTarget,
++                                      final FetchSessionHandler.FetchRequestData data,
++                                      final ClientResponse resp) {
+         try {
+             final FetchResponse response = (FetchResponse) resp.responseBody();
+             final FetchSessionHandler handler = sessionHandler(fetchTarget.id());
+@@ -185,8 +199,7 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+ 
+             metricsManager.recordLatency(resp.requestLatencyMs());
+         } finally {
+-            log.debug("Removing pending request for node {}", fetchTarget);
+-            nodesWithPendingFetchRequests.remove(fetchTarget.id());
++            removePendingFetchRequest(fetchTarget);
+         }
+     }
+ 
+@@ -194,9 +207,12 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+      * Implements the core logic for a failed fetch request/response.
+      *
+      * @param fetchTarget {@link Node} from which the fetch data was requested
++     * @param data {@link FetchSessionHandler.FetchRequestData} that represents the session data
+      * @param t {@link Throwable} representing the error that resulted in the failure
+      */
+-    protected void handleFetchResponse(final Node fetchTarget, final Throwable t) {
++    protected void handleFetchFailure(final Node fetchTarget,
++                                      final FetchSessionHandler.FetchRequestData data,
++                                      final Throwable t) {
+         try {
+             final FetchSessionHandler handler = sessionHandler(fetchTarget.id());
+ 
+@@ -205,23 +221,42 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+                 handler.sessionTopicPartitions().forEach(subscriptions::clearPreferredReadReplica);
+             }
+         } finally {
+-            log.debug("Removing pending request for node {}", fetchTarget);
+-            nodesWithPendingFetchRequests.remove(fetchTarget.id());
++            removePendingFetchRequest(fetchTarget);
+         }
+     }
+ 
+-    protected void handleCloseFetchSessionResponse(final Node fetchTarget,
+-                                                   final FetchSessionHandler.FetchRequestData data) {
++    /**
++     * Implements the core logic for a successful close-fetch-session request/response.
++     *
++     * @param fetchTarget {@link Node} from which the fetch data was requested
++     * @param data {@link FetchSessionHandler.FetchRequestData} that represents the session data
++     * @param ignored {@link ClientResponse} that is ignored
++     */
++    protected void handleCloseFetchSessionSuccess(final Node fetchTarget,
++                                                  final FetchSessionHandler.FetchRequestData data,
++                                                  final ClientResponse ignored) {
+         int sessionId = data.metadata().sessionId();
+         log.debug("Successfully sent a close message for fetch session: {} to node: {}", sessionId, fetchTarget);
+     }
+ 
+-    public void handleCloseFetchSessionResponse(final Node fetchTarget,
+-                                                final FetchSessionHandler.FetchRequestData data,
+-                                                final Throwable t) {
++    /**
++     * Implements the core logic for a failed close-fetch-session request/response.
++     *
++     * @param fetchTarget {@link Node} from which the fetch data was requested
++     * @param data {@link FetchSessionHandler.FetchRequestData} that represents the session data
++     * @param error {@link Throwable} representing the error that resulted in the failure
++     */
++    protected void handleCloseFetchSessionFailure(final Node fetchTarget,
++                                                  final FetchSessionHandler.FetchRequestData data,
++                                                  final Throwable error) {
+         int sessionId = data.metadata().sessionId();
+-        log.debug("Unable to a close message for fetch session: {} to node: {}. " +
+-                "This may result in unnecessary fetch sessions at the broker.", sessionId, fetchTarget, t);
++        log.debug("Unable to send a close message for fetch session: {} to node: {}. " +
++                "This may result in unnecessary fetch sessions at the broker.", sessionId, fetchTarget, error);
++    }
++
++    private void removePendingFetchRequest(Node fetchTarget) {
++        log.debug("Removing pending request for node {}", fetchTarget);
++        nodesWithPendingFetchRequests.remove(fetchTarget.id());
+     }
+ 
+     /**
+@@ -317,7 +352,13 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+         }
+     }
+ 
+-    private Map<Node, FetchSessionHandler.FetchRequestData> prepareCloseFetchSessionRequests() {
++    /**
++     * Prepares the requests that notify the brokers that the fetch sessions are being closed. The fetch session
++     * handlers are cleared as a result of this call, so it is expected to be invoked only once, on close.
++     *
++     * @return Per-node {@link FetchSessionHandler.FetchRequestData} for the nodes that are reachable
++     */
++    protected Map<Node, FetchSessionHandler.FetchRequestData> prepareCloseFetchSessionRequests() {
+         final Cluster cluster = metadata.fetch();
+         Map<Node, FetchSessionHandler.Builder> fetchable = new LinkedHashMap<>();
+ 
+@@ -330,7 +371,7 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+                 // skip sending the close request.
+                 final Node fetchTarget = cluster.nodeById(fetchTargetNodeId);
+ 
+-                if (fetchTarget == null || client.isUnavailable(fetchTarget)) {
++                if (fetchTarget == null || isUnavailable(fetchTarget)) {
+                     log.debug("Skip sending close session request to broker {} since it is not reachable", fetchTarget);
+                     return;
+                 }
+@@ -377,8 +418,8 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+             // Use the preferred read replica if set, otherwise the partition's leader
+             Node node = selectReadReplica(partition, leaderOpt.get(), currentTimeMs);
+ 
+-            if (client.isUnavailable(node)) {
+-                client.maybeThrowAuthFailure(node);
++            if (isUnavailable(node)) {
++                maybeThrowAuthFailure(node);
+ 
+                 // If we try to send during the reconnect backoff window, then the request is just
+                 // going to be failed anyway before being sent, so skip sending the request for now
+@@ -412,46 +453,6 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+         return reqs;
+     }
+ 
+-    protected void maybeCloseFetchSessions(final Timer timer) {
+-        final List<RequestFuture<ClientResponse>> requestFutures = new ArrayList<>();
+-        Map<Node, FetchSessionHandler.FetchRequestData> fetchRequestMap = prepareCloseFetchSessionRequests();
+-
+-        for (Map.Entry<Node, FetchSessionHandler.FetchRequestData> entry : fetchRequestMap.entrySet()) {
+-            final Node fetchTarget = entry.getKey();
+-            final FetchSessionHandler.FetchRequestData data = entry.getValue();
+-            final FetchRequest.Builder request = createFetchRequest(fetchTarget, data);
+-            final RequestFuture<ClientResponse> responseFuture = client.send(fetchTarget, request);
+-
+-            responseFuture.addListener(new RequestFutureListener<ClientResponse>() {
+-                @Override
+-                public void onSuccess(ClientResponse value) {
+-                    handleCloseFetchSessionResponse(fetchTarget, data);
+-                }
+-
+-                @Override
+-                public void onFailure(RuntimeException e) {
+-                    handleCloseFetchSessionResponse(fetchTarget, data, e);
+-                }
+-            });
+-
+-            requestFutures.add(responseFuture);
+-        }
+-
+-        // Poll to ensure that request has been written to the socket. Wait until either the timer has expired or until
+-        // all requests have received a response.
+-        while (timer.notExpired() && !requestFutures.stream().allMatch(RequestFuture::isDone)) {
+-            client.poll(timer, null, true);
+-        }
+-
+-        if (!requestFutures.stream().allMatch(RequestFuture::isDone)) {
+-            // we ran out of time before completing all futures. It is ok since we don't want to block the shutdown
+-            // here.
+-            log.debug("All requests couldn't be sent in the specific timeout period {}ms. " +
+-                    "This may result in unnecessary fetch sessions at the broker. Consider increasing the timeout passed for " +
+-                    "KafkaConsumer.close(Duration timeout)", timer.timeoutMs());
+-        }
+-    }
+-
+     // Visible for testing
+     protected FetchSessionHandler sessionHandler(int node) {
+         return sessionHandlers.get(node);
+@@ -466,21 +467,16 @@ public abstract class AbstractFetch<K, V> implements Closeable {
+      */
+     // Visible for testing
+     protected void closeInternal(Timer timer) {
+-        // we do not need to re-enable wake-ups since we are closing already
+-        client.disableWakeups();
+-        maybeCloseFetchSessions(timer);
+         Utils.closeQuietly(fetchBuffer, "fetchBuffer");
+         Utils.closeQuietly(decompressionBufferSupplier, "decompressionBufferSupplier");
+     }
+ 
+     public void close(final Timer timer) {
+-        idempotentCloser.close(() -> {
+-            closeInternal(timer);
+-        });
++        idempotentCloser.close(() -> closeInternal(timer));
+     }
+ 
+     @Override
+     public void close() {
+         close(time.timer(0));
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/CachedSupplier.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/CachedSupplier.java
+new file mode 100644
+index 0000000000..48dfc2e522
+--- /dev/null
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/CachedSupplier.java
+@@ -0,0 +1,49 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements. See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License. You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.kafka.clients.consumer.internals;
++
++import java.util.function.Supplier;
++
++/**
++ * Based on the {@link Supplier} contract, {@link #get()} is expected to be called multiple times and each call should
++ * return the same instance. This {@link Supplier} creates the instance lazily, on the first call to {@link #get()},
++ * via the {@link #create()} method and caches it for all subsequent calls.
++ *
++ * <p/>
++ *
++ * This is used for objects that must be instantiated on a specific thread (e.g. the consumer network thread) and
++ * not on the thread that holds the supplier.
++ *
++ * @param <T> Type of object that is created by the supplier
++ */
++public abstract class CachedSupplier<T> implements Supplier<T> {
++
++    private T result;
++
++    /**
++     * Creates the instance that will be cached and returned by {@link #get()}. This is invoked at most once.
++     */
++    protected abstract T create();
++
++    @Override
++    public synchronized T get() {
++        if (result == null)
++            result = create();
++
++        return result;
++    }
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/CompletedFetch.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/CompletedFetch.java
+index 7a8ee10515..fcbd887d29 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/CompletedFetch.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/CompletedFetch.java
+@@ -53,7 +53,7 @@ import java.util.Set;
+ /**
+  * {@link CompletedFetch} represents a {@link RecordBatch batch} of {@link Record records} that was returned from the
+  * broker via a {@link FetchRequest}. It contains logic to maintain state between calls to
+- * {@link #fetchRecords(FetchConfig, int)}.
++ * {@link #fetchRecords(FetchConfig, Deserializers, int)}.
+  */
+ public class CompletedFetch {
+ 
+@@ -135,7 +135,7 @@ public class CompletedFetch {
+     /**
+      * Draining a {@link CompletedFetch} will signal that the data has been consumed and the underlying resources
+      * are closed. This is somewhat analogous to {@link Closeable#close() closing}, though no error will result if a
+-     * caller invokes {@link #fetchRecords(FetchConfig, int)}; an empty {@link List list} will be returned instead.
++     * caller invokes {@link #fetchRecords(FetchConfig, Deserializers, int)}; an empty {@link List list} will be returned instead.
+      */
+     void drain() {
+         if (!isConsumed) {
+@@ -151,7 +151,7 @@ public class CompletedFetch {
+         }
+     }
+ 
+-    private <K, V> void maybeEnsureValid(FetchConfig<K, V> fetchConfig, RecordBatch batch) {
++    private void maybeEnsureValid(FetchConfig fetchConfig, RecordBatch batch) {
+         if (fetchConfig.checkCrcs && batch.magic() >= RecordBatch.MAGIC_VALUE_V2) {
+             try {
+                 batch.ensureValid();
+@@ -162,7 +162,7 @@ public class CompletedFetch {
+         }
+     }
+ 
+-    private <K, V> void maybeEnsureValid(FetchConfig<K, V> fetchConfig, Record record) {
++    private void maybeEnsureValid(FetchConfig fetchConfig, Record record) {
+         if (fetchConfig.checkCrcs) {
+             try {
+                 record.ensureValid();
+@@ -180,7 +180,7 @@ public class CompletedFetch {
+         }
+     }
+ 
+-    private <K, V> Record nextFetchedRecord(FetchConfig<K, V> fetchConfig) {
++    private Record nextFetchedRecord(FetchConfig fetchConfig) {
+         while (true) {
+             if (records == null || !records.hasNext()) {
+                 maybeCloseRecordStream();
+@@ -245,11 +245,14 @@ public class CompletedFetch {
+      * {@link Deserializer deserialization} of the {@link Record record's} key and value are performed in
+      * this step.
+      *
+-     * @param fetchConfig {@link FetchConfig Configuration} to use, including, but not limited to, {@link Deserializer}s
++     * @param fetchConfig {@link FetchConfig Configuration} to use
++     * @param deserializers {@link Deserializer}s to use to deserialize the record keys and values
+      * @param maxRecords The number of records to return; the number returned may be {@code 0 <= maxRecords}
+      * @return {@link ConsumerRecord Consumer records}
+      */
+-    <K, V> List<ConsumerRecord<K, V>> fetchRecords(FetchConfig<K, V> fetchConfig, int maxRecords) {
++    <K, V> List<ConsumerRecord<K, V>> fetchRecords(FetchConfig fetchConfig,
++                                                   Deserializers<K, V> deserializers,
++                                                   int maxRecords) {
+         // Error when fetching the next record before deserialization.
+         if (corruptLastRecord)
+             throw new KafkaException("Received exception when fetching the next record from " + partition
+@@ -276,7 +279,7 @@ public class CompletedFetch {
+ 
+                 Optional<Integer> leaderEpoch = maybeLeaderEpoch(currentBatch.partitionLeaderEpoch());
+                 TimestampType timestampType = currentBatch.timestampType();
+-                ConsumerRecord<K, V> record = parseRecord(fetchConfig, partition, leaderEpoch, timestampType, lastRecord);
++                ConsumerRecord<K, V> record = parseRecord(deserializers, partition, leaderEpoch, timestampType, lastRecord);
+                 records.add(record);
+                 recordsRead++;
+                 bytesRead += lastRecord.sizeInBytes();
+@@ -302,7 +305,7 @@ public class CompletedFetch {
+     /**
+      * Parse the record entry, deserializing the key / value fields if necessary
+      */
+-    <K, V> ConsumerRecord<K, V> parseRecord(FetchConfig<K, V> fetchConfig,
++    <K, V> ConsumerRecord<K, V> parseRecord(Deserializers<K, V> deserializers,
+                                             TopicPartition partition,
+                                             Optional<Integer> leaderEpoch,
+                                             TimestampType timestampType,
+@@ -312,16 +315,16 @@ public class CompletedFetch {
+             long timestamp = record.timestamp();
+             Headers headers = new RecordHeaders(record.headers());
+             ByteBuffer keyBytes = record.key();
+-            K key = keyBytes == null ? null : fetchConfig.deserializers.keyDeserializer.deserialize(partition.topic(), headers, keyBytes);
++            K key = keyBytes == null ? null : deserializers.keyDeserializer.deserialize(partition.topic(), headers, keyBytes);
+             ByteBuffer valueBytes = record.value();
+-            V value = valueBytes == null ? null : fetchConfig.deserializers.valueDeserializer.deserialize(partition.topic(), headers, valueBytes);
++            V value = valueBytes == null ? null : deserializers.valueDeserializer.deserialize(partition.topic(), headers, valueBytes);
+             return new ConsumerRecord<>(partition.topic(), partition.partition(), offset,
+                     timestamp, timestampType,
+                     keyBytes == null ? ConsumerRecord.NULL_SIZE : keyBytes.remaining(),
+                     valueBytes == null ? ConsumerRecord.NULL_SIZE : valueBytes.remaining(),
+                     key, value, headers, leaderEpoch);
+         } catch (RuntimeException e) {
+-            log.error("Deserializers with error: {}", fetchConfig.deserializers);
++            log.error("Deserializers with error: {}", deserializers);
+             throw new RecordDeserializationException(partition, record.offset(),
+                     "Error deserializing key/value for partition " + partition +
+                             " at offset " + record.offset() + ". If needed, please seek past the record to continue consumption.", e);
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerCoordinator.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerCoordinator.java
+index b906a02fef..b1e5792b62 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerCoordinator.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerCoordinator.java
+@@ -958,7 +958,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
+     public boolean refreshCommittedOffsetsIfNeeded(Timer timer) {
+         final Set<TopicPartition> initializingPartitions = subscriptions.initializingPartitions();
+         final Map<TopicPartition, OffsetAndMetadata> offsets = fetchCommittedOffsets(initializingPartitions, timer);
+-        return refreshCommittedOffsets(offsets, this.metadata, this.subscriptions);
++        if (offsets == null) return false;
++
++        refreshCommittedOffsets(offsets, this.metadata, this.subscriptions);
++        return true;
+     }
+ 
+     /**
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerUtils.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerUtils.java
+index 68d2458e28..78be0ca968 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerUtils.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ConsumerUtils.java
+@@ -142,12 +142,6 @@ public final class ConsumerUtils {
+         return new FetchMetricsManager(metrics, metricsRegistry);
+     }
+ 
+-    public static <K, V> FetchConfig<K, V> createFetchConfig(ConsumerConfig config,
+-                                                             Deserializers<K, V> deserializers) {
+-        IsolationLevel isolationLevel = configuredIsolationLevel(config);
+-        return new FetchConfig<>(config, deserializers, isolationLevel);
+-    }
+-
+     @SuppressWarnings("unchecked")
+     public static <K, V> List<ConsumerInterceptor<K, V>> configuredConsumerInterceptors(ConsumerConfig config) {
+         return (List<ConsumerInterceptor<K, V>>) ClientUtils.configuredInterceptors(config, ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG, ConsumerInterceptor.class);
+@@ -168,13 +162,11 @@ public final class ConsumerUtils {
+      *                           committed offsets' metadata.
+      * @param subscriptions      Subscription state to update, setting partitions' offsets to the
+      *                           committed offsets.
+-     * @return False if null <code>offsetsAndMetadata</code> is provided, indicating that the
+-     * refresh operation could not be performed. True in any other case.
+      */
+-    public static boolean refreshCommittedOffsets(final Map<TopicPartition, OffsetAndMetadata> offsetsAndMetadata,
+-                                                  final ConsumerMetadata metadata,
+-                                                  final SubscriptionState subscriptions) {
+-        if (offsetsAndMetadata == null) return false;
++    public static void refreshCommittedOffsets(final Map<TopicPartition, OffsetAndMetadata> offsetsAndMetadata,
++                                               final ConsumerMetadata metadata,
++                                               final SubscriptionState subscriptions) {
++        if (offsetsAndMetadata == null) return;
+ 
+         for (final Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsetsAndMetadata.entrySet()) {
+             final TopicPartition tp = entry.getKey();
+@@ -200,7 +192,16 @@ public final class ConsumerUtils {
+                 }
+             }
+         }
+-        return true;
++    }
++
++    /**
++     * Wraps the given {@link Throwable} in a {@link KafkaException} unless it already is a {@link RuntimeException}.
++     */
++    public static RuntimeException maybeWrapAsKafkaException(Throwable t) {
++        if (t instanceof RuntimeException)
++            return (RuntimeException) t;
++        else
++            return new KafkaException(t);
+     }
+ 
+     public static <T> T getResult(CompletableFuture<T> future, Timer timer) {
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/DefaultBackgroundThread.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/DefaultBackgroundThread.java
+deleted file mode 100644
+index 74322e6fec..0000000000
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/DefaultBackgroundThread.java
++++ /dev/null
+@@ -1,293 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals;
+-
+-import org.apache.kafka.clients.ApiVersions;
+-import org.apache.kafka.clients.ClientUtils;
+-import org.apache.kafka.clients.GroupRebalanceConfig;
+-import org.apache.kafka.clients.NetworkClient;
+-import org.apache.kafka.clients.consumer.ConsumerConfig;
+-import org.apache.kafka.clients.consumer.internals.events.ApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.ApplicationEventProcessor;
+-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
+-import org.apache.kafka.common.KafkaException;
+-import org.apache.kafka.common.errors.WakeupException;
+-import org.apache.kafka.common.metrics.Metrics;
+-import org.apache.kafka.common.metrics.Sensor;
+-import org.apache.kafka.common.utils.KafkaThread;
+-import org.apache.kafka.common.utils.LogContext;
+-import org.apache.kafka.common.utils.Time;
+-import org.apache.kafka.common.utils.Utils;
+-import org.slf4j.Logger;
+-
+-import java.util.LinkedList;
+-import java.util.Objects;
+-import java.util.Optional;
+-import java.util.concurrent.BlockingQueue;
+-
+-import static java.util.Objects.requireNonNull;
+-import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION;
+-import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_METRIC_GROUP_PREFIX;
+-import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.configuredIsolationLevel;
+-
+-/**
+- * Background thread runnable that consumes {@code ApplicationEvent} and
+- * produces {@code BackgroundEvent}. It uses an event loop to consume and
+- * produce events, and poll the network client to handle network IO.
+- * <p/>
+- * It holds a reference to the {@link SubscriptionState}, which is
+- * initialized by the polling thread.
+- * <p/>
+- * For processing application events that have been submitted to the
+- * {@link #applicationEventQueue}, this relies on an {@link ApplicationEventProcessor}. Processing includes generating requests and
+- * handling responses with the appropriate {@link RequestManager}. The network operations for
+- * actually sending the requests is delegated to the {@link NetworkClientDelegate}
+- * </li>
+- */
+-public class DefaultBackgroundThread extends KafkaThread {
+-    private static final long MAX_POLL_TIMEOUT_MS = 5000;
+-    private static final String BACKGROUND_THREAD_NAME = "consumer_background_thread";
+-    private final Time time;
+-    private final Logger log;
+-    private final BlockingQueue<ApplicationEvent> applicationEventQueue;
+-    private final BlockingQueue<BackgroundEvent> backgroundEventQueue;
+-    private final ConsumerMetadata metadata;
+-    private final ConsumerConfig config;
+-    // empty if groupId is null
+-    private final ApplicationEventProcessor applicationEventProcessor;
+-    private final NetworkClientDelegate networkClientDelegate;
+-    private final ErrorEventHandler errorEventHandler;
+-    private final GroupState groupState;
+-    private boolean running;
+-
+-    private final RequestManagers requestManagers;
+-
+-    // Visible for testing
+-    @SuppressWarnings("ParameterNumber")
+-    DefaultBackgroundThread(final Time time,
+-                            final ConsumerConfig config,
+-                            final LogContext logContext,
+-                            final BlockingQueue<ApplicationEvent> applicationEventQueue,
+-                            final BlockingQueue<BackgroundEvent> backgroundEventQueue,
+-                            final ErrorEventHandler errorEventHandler,
+-                            final ApplicationEventProcessor processor,
+-                            final ConsumerMetadata metadata,
+-                            final NetworkClientDelegate networkClient,
+-                            final GroupState groupState,
+-                            final CoordinatorRequestManager coordinatorManager,
+-                            final CommitRequestManager commitRequestManager,
+-                            final OffsetsRequestManager offsetsRequestManager,
+-                            final TopicMetadataRequestManager topicMetadataRequestManager,
+-                            final HeartbeatRequestManager heartbeatRequestManager) {
+-        super(BACKGROUND_THREAD_NAME, true);
+-        this.time = time;
+-        this.running = true;
+-        this.log = logContext.logger(getClass());
+-        this.applicationEventQueue = applicationEventQueue;
+-        this.backgroundEventQueue = backgroundEventQueue;
+-        this.applicationEventProcessor = processor;
+-        this.config = config;
+-        this.metadata = metadata;
+-        this.networkClientDelegate = networkClient;
+-        this.errorEventHandler = errorEventHandler;
+-        this.groupState = groupState;
+-        this.requestManagers = new RequestManagers(
+-                offsetsRequestManager,
+-                topicMetadataRequestManager,
+-                Optional.ofNullable(coordinatorManager),
+-                Optional.ofNullable(commitRequestManager),
+-                Optional.ofNullable(heartbeatRequestManager));
+-    }
+-
+-    public DefaultBackgroundThread(final Time time,
+-                                   final ConsumerConfig config,
+-                                   final GroupRebalanceConfig rebalanceConfig,
+-                                   final LogContext logContext,
+-                                   final BlockingQueue<ApplicationEvent> applicationEventQueue,
+-                                   final BlockingQueue<BackgroundEvent> backgroundEventQueue,
+-                                   final ConsumerMetadata metadata,
+-                                   final SubscriptionState subscriptionState,
+-                                   final ApiVersions apiVersions,
+-                                   final Metrics metrics,
+-                                   final Sensor fetcherThrottleTimeSensor) {
+-        super(BACKGROUND_THREAD_NAME, true);
+-        requireNonNull(config);
+-        requireNonNull(rebalanceConfig);
+-        requireNonNull(logContext);
+-        requireNonNull(applicationEventQueue);
+-        requireNonNull(backgroundEventQueue);
+-        requireNonNull(metadata);
+-        requireNonNull(subscriptionState);
+-        try {
+-            this.time = time;
+-            this.log = logContext.logger(getClass());
+-            this.applicationEventQueue = applicationEventQueue;
+-            this.backgroundEventQueue = backgroundEventQueue;
+-            this.config = config;
+-            this.metadata = metadata;
+-            final NetworkClient networkClient = ClientUtils.createNetworkClient(config,
+-                metrics,
+-                CONSUMER_METRIC_GROUP_PREFIX,
+-                logContext,
+-                apiVersions,
+-                time,
+-                CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION,
+-                metadata,
+-                fetcherThrottleTimeSensor);
+-            this.networkClientDelegate = new NetworkClientDelegate(
+-                this.time,
+-                this.config,
+-                logContext,
+-                networkClient);
+-            this.running = true;
+-            this.errorEventHandler = new ErrorEventHandler(this.backgroundEventQueue);
+-            this.groupState = new GroupState(rebalanceConfig);
+-            long retryBackoffMs = config.getLong(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG);
+-            long retryBackoffMaxMs = config.getLong(ConsumerConfig.RETRY_BACKOFF_MAX_MS_CONFIG);
+-            final int requestTimeoutMs = config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG);
+-
+-            OffsetsRequestManager offsetsRequestManager =
+-                new OffsetsRequestManager(
+-                    subscriptionState,
+-                    metadata,
+-                    configuredIsolationLevel(config),
+-                    time,
+-                    retryBackoffMs,
+-                    requestTimeoutMs,
+-                    apiVersions,
+-                    networkClientDelegate,
+-                    logContext);
+-            CoordinatorRequestManager coordinatorRequestManager = null;
+-            CommitRequestManager commitRequestManager = null;
+-            TopicMetadataRequestManager topicMetadataRequestManger = new TopicMetadataRequestManager(
+-                logContext,
+-                config);
+-            HeartbeatRequestManager heartbeatRequestManager = null;
+-
+-            // TODO: consolidate groupState and memberState
+-            if (groupState.groupId != null) {
+-                coordinatorRequestManager = new CoordinatorRequestManager(
+-                        this.time,
+-                        logContext,
+-                        retryBackoffMs,
+-                        retryBackoffMaxMs,
+-                        this.errorEventHandler,
+-                        groupState.groupId);
+-                commitRequestManager = new CommitRequestManager(
+-                        this.time,
+-                        logContext,
+-                        subscriptionState,
+-                        config,
+-                        coordinatorRequestManager,
+-                        groupState);
+-                MembershipManager membershipManager = new MembershipManagerImpl(groupState.groupId, logContext);
+-                heartbeatRequestManager = new HeartbeatRequestManager(
+-                        this.time,
+-                        logContext,
+-                        config,
+-                        coordinatorRequestManager,
+-                        subscriptionState,
+-                        membershipManager,
+-                        errorEventHandler);
+-            }
+-
+-            this.requestManagers = new RequestManagers(
+-                offsetsRequestManager,
+-                topicMetadataRequestManger,
+-                Optional.ofNullable(coordinatorRequestManager),
+-                Optional.ofNullable(commitRequestManager),
+-                Optional.ofNullable(heartbeatRequestManager));
+-            this.applicationEventProcessor = new ApplicationEventProcessor(
+-                backgroundEventQueue,
+-                requestManagers,
+-                metadata);
+-        } catch (final Exception e) {
+-            close();
+-            throw new KafkaException("Failed to construct background processor", e.getCause());
+-        }
+-    }
+-
+-    @Override
+-    public void run() {
+-        try {
+-            log.debug("Background thread started");
+-            while (running) {
+-                try {
+-                    runOnce();
+-                } catch (final WakeupException e) {
+-                    log.debug("WakeupException caught, background thread won't be interrupted");
+-                    // swallow the wakeup exception to prevent killing the background thread.
+-                }
+-            }
+-        } catch (final Throwable t) {
+-            log.error("The background thread failed due to unexpected error", t);
+-            throw new KafkaException(t);
+-        } finally {
+-            close();
+-            log.debug("{} closed", getClass());
+-        }
+-    }
+-
+-    /**
+-     * Poll and process an {@link ApplicationEvent}. It performs the following tasks:
+-     * 1. Drains and try to process all the requests in the queue.
+-     * 2. Iterate through the registry, poll, and get the next poll time for the network poll
+-     * 3. Poll the networkClient to send and retrieve the response.
+-     */
+-    void runOnce() {
+-        if (!applicationEventQueue.isEmpty()) {
+-            LinkedList<ApplicationEvent> res = new LinkedList<>();
+-            this.applicationEventQueue.drainTo(res);
+-
+-            for (ApplicationEvent event : res) {
+-                log.debug("Consuming application event: {}", event);
+-                Objects.requireNonNull(event);
+-                applicationEventProcessor.process(event);
+-            }
+-        }
+-
+-        final long currentTimeMs = time.milliseconds();
+-        final long pollWaitTimeMs = requestManagers.entries().stream()
+-                .filter(Optional::isPresent)
+-                .map(m -> m.get().poll(currentTimeMs))
+-                .map(this::handlePollResult)
+-                .reduce(MAX_POLL_TIMEOUT_MS, Math::min);
+-        networkClientDelegate.poll(pollWaitTimeMs, currentTimeMs);
+-    }
+-
+-    long handlePollResult(NetworkClientDelegate.PollResult res) {
+-        if (!res.unsentRequests.isEmpty()) {
+-            networkClientDelegate.addAll(res.unsentRequests);
+-        }
+-        return res.timeUntilNextPollMs;
+-    }
+-
+-    public boolean isRunning() {
+-        return this.running;
+-    }
+-
+-    public final void wakeup() {
+-        networkClientDelegate.wakeup();
+-    }
+-
+-    public final void close() {
+-        this.running = false;
+-        this.wakeup();
+-        Utils.closeQuietly(networkClientDelegate, "network client utils");
+-        Utils.closeQuietly(metadata, "consumer metadata client");
+-    }
+-}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/DefaultEventHandler.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/DefaultEventHandler.java
+deleted file mode 100644
+index 4d620a4ffa..0000000000
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/DefaultEventHandler.java
++++ /dev/null
+@@ -1,151 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals;
+-
+-import org.apache.kafka.clients.ApiVersions;
+-import org.apache.kafka.clients.ClientUtils;
+-import org.apache.kafka.clients.GroupRebalanceConfig;
+-import org.apache.kafka.clients.consumer.ConsumerConfig;
+-import org.apache.kafka.clients.consumer.internals.events.ApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
+-import org.apache.kafka.clients.consumer.internals.events.CompletableApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.EventHandler;
+-import org.apache.kafka.common.internals.ClusterResourceListeners;
+-import org.apache.kafka.common.metrics.Metrics;
+-import org.apache.kafka.common.metrics.Sensor;
+-import org.apache.kafka.common.utils.LogContext;
+-import org.apache.kafka.common.utils.Time;
+-import org.apache.kafka.common.utils.Timer;
+-
+-import java.net.InetSocketAddress;
+-import java.util.List;
+-import java.util.Objects;
+-import java.util.Optional;
+-import java.util.concurrent.BlockingQueue;
+-import java.util.concurrent.LinkedBlockingQueue;
+-
+-/**
+- * An {@code EventHandler} that uses a single background thread to consume {@code ApplicationEvent} and produce
+- * {@code BackgroundEvent} from the {@link DefaultBackgroundThread}.
+- */
+-public class DefaultEventHandler implements EventHandler {
+-
+-    private final BlockingQueue<ApplicationEvent> applicationEventQueue;
+-    private final BlockingQueue<BackgroundEvent> backgroundEventQueue;
+-    private final DefaultBackgroundThread backgroundThread;
+-
+-    public DefaultEventHandler(final ConsumerConfig config,
+-                               final GroupRebalanceConfig groupRebalanceConfig,
+-                               final LogContext logContext,
+-                               final SubscriptionState subscriptionState,
+-                               final ApiVersions apiVersions,
+-                               final Metrics metrics,
+-                               final ClusterResourceListeners clusterResourceListeners,
+-                               final Sensor fetcherThrottleTimeSensor) {
+-        this(Time.SYSTEM,
+-                config,
+-                groupRebalanceConfig,
+-                logContext,
+-                new LinkedBlockingQueue<>(),
+-                new LinkedBlockingQueue<>(),
+-                subscriptionState,
+-                apiVersions,
+-                metrics,
+-                clusterResourceListeners,
+-                fetcherThrottleTimeSensor);
+-    }
+-
+-    public DefaultEventHandler(final Time time,
+-                               final ConsumerConfig config,
+-                               final GroupRebalanceConfig groupRebalanceConfig,
+-                               final LogContext logContext,
+-                               final BlockingQueue<ApplicationEvent> applicationEventQueue,
+-                               final BlockingQueue<BackgroundEvent> backgroundEventQueue,
+-                               final SubscriptionState subscriptionState,
+-                               final ApiVersions apiVersions,
+-                               final Metrics metrics,
+-                               final ClusterResourceListeners clusterResourceListeners,
+-                               final Sensor fetcherThrottleTimeSensor) {
+-        this.applicationEventQueue = applicationEventQueue;
+-        this.backgroundEventQueue = backgroundEventQueue;
+-
+-        // Bootstrap a metadata object with the bootstrap server IP address, which will be used once for the
+-        // subsequent metadata refresh once the background thread has started up.
+-        final ConsumerMetadata metadata = new ConsumerMetadata(config,
+-                subscriptionState,
+-                logContext,
+-                clusterResourceListeners);
+-        final List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(config);
+-        metadata.bootstrap(addresses);
+-
+-        this.backgroundThread = new DefaultBackgroundThread(
+-            time,
+-            config,
+-            groupRebalanceConfig,
+-            logContext,
+-            this.applicationEventQueue,
+-            this.backgroundEventQueue,
+-            metadata,
+-            subscriptionState,
+-            apiVersions,
+-            metrics,
+-            fetcherThrottleTimeSensor);
+-        backgroundThread.start();
+-    }
+-
+-    // VisibleForTesting
+-    DefaultEventHandler(final DefaultBackgroundThread backgroundThread,
+-                        final BlockingQueue<ApplicationEvent> applicationEventQueue,
+-                        final BlockingQueue<BackgroundEvent> backgroundEventQueue) {
+-        this.backgroundThread = backgroundThread;
+-        this.applicationEventQueue = applicationEventQueue;
+-        this.backgroundEventQueue = backgroundEventQueue;
+-        backgroundThread.start();
+-    }
+-
+-    @Override
+-    public Optional<BackgroundEvent> poll() {
+-        return Optional.ofNullable(backgroundEventQueue.poll());
+-    }
+-
+-    @Override
+-    public boolean isEmpty() {
+-        return backgroundEventQueue.isEmpty();
+-    }
+-
+-    @Override
+-    public boolean add(final ApplicationEvent event) {
+-        backgroundThread.wakeup();
+-        return applicationEventQueue.add(event);
+-    }
+-
+-    @Override
+-    public <T> T addAndGet(final CompletableApplicationEvent<T> event, final Timer timer) {
+-        Objects.requireNonNull(event, "CompletableApplicationEvent provided to addAndGet must be non-null");
+-        Objects.requireNonNull(timer, "Timer provided to addAndGet must be non-null");
+-        add(event);
+-        return event.get(timer);
+-    }
+-
+-    public void close() {
+-        try {
+-            backgroundThread.close();
+-        } catch (final Exception e) {
+-            throw new RuntimeException(e);
+-        }
+-    }
+-}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ErrorEventHandler.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ErrorEventHandler.java
+deleted file mode 100644
+index 31c1873121..0000000000
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/ErrorEventHandler.java
++++ /dev/null
+@@ -1,34 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals;
+-
+-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
+-import org.apache.kafka.clients.consumer.internals.events.ErrorBackgroundEvent;
+-
+-import java.util.Queue;
+-
+-public class ErrorEventHandler {
+-    private final Queue<BackgroundEvent> backgroundEventQueue;
+-
+-    public ErrorEventHandler(Queue<BackgroundEvent> backgroundEventQueue) {
+-        this.backgroundEventQueue = backgroundEventQueue;
+-    }
+-
+-    public void handle(Throwable e) {
+-        backgroundEventQueue.add(new ErrorBackgroundEvent(e));
+-    }
+-}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchBuffer.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchBuffer.java
+index d82b37ad99..14d27f7ba4 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchBuffer.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchBuffer.java
+@@ -17,15 +17,20 @@
+ package org.apache.kafka.clients.consumer.internals;
+ 
+ import org.apache.kafka.common.TopicPartition;
++import org.apache.kafka.common.errors.InterruptException;
+ import org.apache.kafka.common.internals.IdempotentCloser;
+ import org.apache.kafka.common.utils.LogContext;
++import org.apache.kafka.common.utils.Timer;
+ import org.slf4j.Logger;
+ 
+-import java.io.Closeable;
+ import java.util.Collection;
+ import java.util.HashSet;
+ import java.util.Set;
+ import java.util.concurrent.ConcurrentLinkedQueue;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.locks.Condition;
++import java.util.concurrent.locks.Lock;
++import java.util.concurrent.locks.ReentrantLock;
+ import java.util.function.Predicate;
+ 
+ /**
+@@ -35,19 +40,26 @@ import java.util.function.Predicate;
+  *
+  * <p/>
+  *
+- * <em>Note</em>: this class is not thread-safe and is intended to only be used from a single thread.
++ * <em>Note</em>: completed fetches may be added from one thread (e.g. the consumer network thread) while the
++ * buffered data is consumed from another (e.g. the application thread), so the queue itself is thread-safe.
++ * The "next in line" fetch, however, is only mutated by the consuming thread.
+  */
+-public class FetchBuffer implements Closeable {
++public class FetchBuffer implements AutoCloseable {
+ 
+     private final Logger log;
+     private final ConcurrentLinkedQueue<CompletedFetch> completedFetches;
++    private final Lock lock;
++    private final Condition notEmptyCondition;
+     private final IdempotentCloser idempotentCloser = new IdempotentCloser();
+ 
+-    private CompletedFetch nextInLineFetch;
++    private volatile CompletedFetch nextInLineFetch;
++    private boolean wokenUp;
+ 
+     public FetchBuffer(final LogContext logContext) {
+         this.log = logContext.logger(FetchBuffer.class);
+         this.completedFetches = new ConcurrentLinkedQueue<>();
++        this.lock = new ReentrantLock();
++        this.notEmptyCondition = lock.newCondition();
+     }
+ 
+     /**
+@@ -70,11 +82,69 @@ public class FetchBuffer implements Closeable {
+     }
+ 
+     void add(CompletedFetch completedFetch) {
+-        completedFetches.add(completedFetch);
++        lock.lock();
++        try {
++            completedFetches.add(completedFetch);
++            notEmptyCondition.signalAll();
++        } finally {
++            lock.unlock();
++        }
+     }
+ 
+     void addAll(Collection<CompletedFetch> completedFetches) {
+-        this.completedFetches.addAll(completedFetches);
++        lock.lock();
++        try {
++            this.completedFetches.addAll(completedFetches);
++            notEmptyCondition.signalAll();
++        } finally {
++            lock.unlock();
++        }
++    }
++
++    /**
++     * Waits until the buffer has at least one completed fetch, the timer expires, or {@link #wakeup()} is invoked.
++     * If the buffer is already non-empty this returns immediately.
++     *
++     * @param timer Timer that bounds the wait
++     * @return {@code true} if the buffer was non-empty when this method returned
++     */
++    boolean awaitNotEmpty(Timer timer) {
++        lock.lock();
++        try {
++            while (completedFetches.isEmpty() && !wokenUp) {
++                // Update the timer before we head into the loop in case it took a while to get the lock.
++                timer.update();
++
++                if (timer.isExpired())
++                    break;
++
++                try {
++                    notEmptyCondition.await(timer.remainingMs(), TimeUnit.MILLISECONDS);
++                } catch (InterruptedException e) {
++                    throw new InterruptException("Timeout waiting for results from fetching records", e);
++                }
++            }
++
++            wokenUp = false;
++            return !completedFetches.isEmpty();
++        } finally {
++            lock.unlock();
++            timer.update();
++        }
++    }
++
++    /**
++     * Interrupts a thread blocked in {@link #awaitNotEmpty(Timer)}. If no thread is blocked, the next call to
++     * {@link #awaitNotEmpty(Timer)} will return immediately.
++     */
++    void wakeup() {
++        lock.lock();
++        try {
++            wokenUp = true;
++            notEmptyCondition.signalAll();
++        } finally {
++            lock.unlock();
++        }
+     }
+ 
+     CompletedFetch nextInLineFetch() {
+@@ -124,8 +194,10 @@ public class FetchBuffer implements Closeable {
+     Set<TopicPartition> bufferedPartitions() {
+         final Set<TopicPartition> partitions = new HashSet<>();
+ 
+-        if (nextInLineFetch != null && !nextInLineFetch.isConsumed()) {
+-            partitions.add(nextInLineFetch.partition);
++        final CompletedFetch nextInLine = nextInLineFetch;
++
++        if (nextInLine != null && !nextInLine.isConsumed()) {
++            partitions.add(nextInLine.partition);
+         }
+ 
+         completedFetches.forEach(cf -> partitions.add(cf.partition));
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchCollector.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchCollector.java
+index 0e1f2f18a3..d039734a83 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchCollector.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchCollector.java
+@@ -54,20 +54,23 @@ public class FetchCollector<K, V> {
+     private final Logger log;
+     private final ConsumerMetadata metadata;
+     private final SubscriptionState subscriptions;
+-    private final FetchConfig<K, V> fetchConfig;
++    private final FetchConfig fetchConfig;
++    private final Deserializers<K, V> deserializers;
+     private final FetchMetricsManager metricsManager;
+     private final Time time;
+ 
+     public FetchCollector(final LogContext logContext,
+                           final ConsumerMetadata metadata,
+                           final SubscriptionState subscriptions,
+-                          final FetchConfig<K, V> fetchConfig,
++                          final FetchConfig fetchConfig,
++                          final Deserializers<K, V> deserializers,
+                           final FetchMetricsManager metricsManager,
+                           final Time time) {
+         this.log = logContext.logger(FetchCollector.class);
+         this.metadata = metadata;
+         this.subscriptions = subscriptions;
+         this.fetchConfig = fetchConfig;
++        this.deserializers = deserializers;
+         this.metricsManager = metricsManager;
+         this.time = time;
+     }
+@@ -162,7 +165,7 @@ public class FetchCollector<K, V> {
+                 throw new IllegalStateException("Missing position for fetchable partition " + tp);
+ 
+             if (nextInLineFetch.nextFetchOffset() == position.offset) {
+-                List<ConsumerRecord<K, V>> partRecords = nextInLineFetch.fetchRecords(fetchConfig, fetchConfig.maxPollRecords);
++                List<ConsumerRecord<K, V>> partRecords = nextInLineFetch.fetchRecords(fetchConfig, deserializers, fetchConfig.maxPollRecords);
+ 
+                 log.trace("Returning {} fetched records at offset {} for assigned partition {}",
+                         partRecords.size(), position, tp);
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchConfig.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchConfig.java
+index 66670b5447..cce559a477 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchConfig.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchConfig.java
+@@ -21,8 +21,6 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
+ import org.apache.kafka.common.IsolationLevel;
+ import org.apache.kafka.common.serialization.Deserializer;
+ 
+-import java.util.Objects;
+-
+ /**
+  * {@link FetchConfig} represents the static configuration for fetching records from Kafka. It is simply a way
+  * to bundle the immutable settings that were presented at the time the {@link Consumer} was created for later use by
+@@ -41,24 +39,14 @@ import java.util.Objects;
+  *     <li>{@link #maxPollRecords}: {@link ConsumerConfig#MAX_POLL_RECORDS_CONFIG}</li>
+  *     <li>{@link #checkCrcs}: {@link ConsumerConfig#CHECK_CRCS_CONFIG}</li>
+  *     <li>{@link #clientRackId}: {@link ConsumerConfig#CLIENT_RACK_CONFIG}</li>
+- *     <li>{@link #deserializers}:
+- *         {@link ConsumerConfig#KEY_DESERIALIZER_CLASS_CONFIG}/{@link ConsumerConfig#VALUE_DESERIALIZER_CLASS_CONFIG}
+- *     </li>
+  *     <li>{@link #isolationLevel}: {@link ConsumerConfig#ISOLATION_LEVEL_CONFIG}</li>
+  * </ul>
+  *
+- * However, there are places in the code where additional logic is used to determine these fetch-related configuration
+- * values. In those cases, the values are calculated outside of this class and simply passed in when constructed.
+- *
+- * <p/>
+- *
+- * Note: the {@link Deserializer deserializers} used for the key and value are not closed by this class. They should be
+- * closed by the creator of the {@link FetchConfig}.
+- *
+- * @param <K> Type used to {@link Deserializer deserialize} the message/record key
+- * @param <V> Type used to {@link Deserializer deserialize} the message/record value
++ * Note: the {@link Deserializer deserializers} used for the key and value are not part of this class. They are
++ * provided separately (see {@link Deserializers}) to the classes that deserialize the records, such as
++ * {@link FetchCollector}, and are closed by their creator.
+  */
+-public class FetchConfig<K, V> {
++public class FetchConfig {
+ 
+     final int minBytes;
+     final int maxBytes;
+@@ -67,32 +55,12 @@ public class FetchConfig<K, V> {
+     final int maxPollRecords;
+     final boolean checkCrcs;
+     final String clientRackId;
+-    final Deserializers<K, V> deserializers;
+     final IsolationLevel isolationLevel;
+ 
+-    public FetchConfig(int minBytes,
+-                       int maxBytes,
+-                       int maxWaitMs,
+-                       int fetchSize,
+-                       int maxPollRecords,
+-                       boolean checkCrcs,
+-                       String clientRackId,
+-                       Deserializers<K, V> deserializers,
+-                       IsolationLevel isolationLevel) {
+-        this.minBytes = minBytes;
+-        this.maxBytes = maxBytes;
+-        this.maxWaitMs = maxWaitMs;
+-        this.fetchSize = fetchSize;
+-        this.maxPollRecords = maxPollRecords;
+-        this.checkCrcs = checkCrcs;
+-        this.clientRackId = clientRackId;
+-        this.deserializers = Objects.requireNonNull(deserializers, "Message deserializers provided to FetchConfig should not be null");
+-        this.isolationLevel = isolationLevel;
+-    }
+-
+-    public FetchConfig(ConsumerConfig config,
+-                       Deserializers<K, V> deserializers,
+-                       IsolationLevel isolationLevel) {
++    /**
++     * Constructs a new {@link FetchConfig} using the {@link ConsumerConfig consumer configuration} settings.
++     */
++    public FetchConfig(ConsumerConfig config) {
+         this.minBytes = config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG);
+         this.maxBytes = config.getInt(ConsumerConfig.FETCH_MAX_BYTES_CONFIG);
+         this.maxWaitMs = config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG);
+@@ -100,8 +68,7 @@ public class FetchConfig<K, V> {
+         this.maxPollRecords = config.getInt(ConsumerConfig.MAX_POLL_RECORDS_CONFIG);
+         this.checkCrcs = config.getBoolean(ConsumerConfig.CHECK_CRCS_CONFIG);
+         this.clientRackId = config.getString(ConsumerConfig.CLIENT_RACK_CONFIG);
+-        this.deserializers = Objects.requireNonNull(deserializers, "Message deserializers provided to FetchConfig should not be null");
+-        this.isolationLevel = isolationLevel;
++        this.isolationLevel = ConsumerUtils.configuredIsolationLevel(config);
+     }
+ 
+     @Override
+@@ -114,7 +81,6 @@ public class FetchConfig<K, V> {
+                 ", maxPollRecords=" + maxPollRecords +
+                 ", checkCrcs=" + checkCrcs +
+                 ", clientRackId='" + clientRackId + '\'' +
+-                ", deserializers=" + deserializers +
+                 ", isolationLevel=" + isolationLevel +
+                 '}';
+     }
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchRequestManager.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchRequestManager.java
+new file mode 100644
+index 0000000000..97f365d5a6
+--- /dev/null
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/FetchRequestManager.java
+@@ -0,0 +1,128 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements. See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License. You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.kafka.clients.consumer.internals;
++
++import org.apache.kafka.clients.ClientResponse;
++import org.apache.kafka.clients.FetchSessionHandler;
++import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.PollResult;
++import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.UnsentRequest;
++import org.apache.kafka.common.Node;
++import org.apache.kafka.common.requests.FetchRequest;
++import org.apache.kafka.common.utils.LogContext;
++import org.apache.kafka.common.utils.Time;
++
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.function.BiConsumer;
++import java.util.stream.Collectors;
++
++/**
++ * {@code FetchRequestManager} is responsible for generating {@link FetchRequest} that represent the
++ * {@link SubscriptionState#fetchablePartitions fetchable partitions} based on the user's topic subscription/partition
++ * assignment.
++ *
++ * <p/>
++ *
++ * This class runs on the consumer network thread. It does <em>not</em> decompress or deserialize the records: the
++ * responses are only turned into {@link CompletedFetch}es that are added to the {@link FetchBuffer}, from where
++ * they are collected, decompressed and deserialized on the application thread by the {@link FetchCollector}.
++ */
++public class FetchRequestManager extends AbstractFetch implements RequestManager {
++
++    private final NetworkClientDelegate networkClientDelegate;
++
++    public FetchRequestManager(final LogContext logContext,
++                               final Time time,
++                               final ConsumerMetadata metadata,
++                               final SubscriptionState subscriptions,
++                               final FetchConfig fetchConfig,
++                               final FetchBuffer fetchBuffer,
++                               final FetchMetricsManager metricsManager,
++                               final NetworkClientDelegate networkClientDelegate) {
++        super(logContext, metadata, subscriptions, fetchConfig, fetchBuffer, metricsManager, time);
++        this.networkClientDelegate = networkClientDelegate;
++    }
++
++    @Override
++    protected boolean isUnavailable(Node node) {
++        return networkClientDelegate.isUnavailable(node);
++    }
++
++    @Override
++    protected void maybeThrowAuthFailure(Node node) {
++        networkClientDelegate.maybeThrowAuthFailure(node);
++    }
++
++    /**
++     * Creates the fetch requests for the nodes that have fetchable partitions and no request in flight.
++     *
++     * @param currentTimeMs The current system time in milliseconds at the time of the poll
++     * @return A {@link PollResult} with one {@link UnsentRequest} per node
++     */
++    @Override
++    public PollResult poll(long currentTimeMs) {
++        return pollInternal(
++                prepareFetchRequests(),
++                this::handleFetchSuccess,
++                this::handleFetchFailure
++        );
++    }
++
++    /**
++     * Creates the requests that close the fetch sessions with the brokers. This is invoked by the network thread
++     * when it is shutting down.
++     */
++    @Override
++    public PollResult pollOnClose() {
++        return pollInternal(
++                prepareCloseFetchSessionRequests(),
++                this::handleCloseFetchSessionSuccess,
++                this::handleCloseFetchSessionFailure
++        );
++    }
++
++    /**
++     * Creates the {@link PollResult} from the per-node request data, wiring each request's completion to the
++     * given success and failure handlers.
++     */
++    private PollResult pollInternal(Map<Node, FetchSessionHandler.FetchRequestData> fetchRequests,
++                                    ResponseHandler<ClientResponse> successHandler,
++                                    ResponseHandler<Throwable> errorHandler) {
++        List<UnsentRequest> requests = fetchRequests.entrySet().stream().map(entry -> {
++            final Node fetchTarget = entry.getKey();
++            final FetchSessionHandler.FetchRequestData data = entry.getValue();
++            final FetchRequest.Builder request = createFetchRequest(fetchTarget, data);
++            final BiConsumer<ClientResponse, Throwable> responseHandler = (clientResponse, error) -> {
++                if (error != null)
++                    errorHandler.handle(fetchTarget, data, error);
++                else
++                    successHandler.handle(fetchTarget, data, clientResponse);
++            };
++
++            return new UnsentRequest(request, Optional.of(fetchTarget), responseHandler);
++        }).collect(Collectors.toList());
++
++        return new PollResult(requests);
++    }
++
++    @FunctionalInterface
++    private interface ResponseHandler<T> {
++
++        void handle(Node target, FetchSessionHandler.FetchRequestData data, T response);
++    }
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/Fetcher.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/Fetcher.java
+index dec02c6b90..39c31dce79 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/Fetcher.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/Fetcher.java
+@@ -23,9 +23,13 @@ import org.apache.kafka.common.TopicPartition;
+ import org.apache.kafka.common.requests.FetchRequest;
+ import org.apache.kafka.common.utils.LogContext;
+ import org.apache.kafka.common.utils.Time;
++import org.apache.kafka.common.utils.Timer;
++import org.slf4j.Logger;
+ 
++import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.HashSet;
++import java.util.List;
+ import java.util.Map;
+ 
+ /**
+@@ -47,26 +51,42 @@ import java.util.Map;
+  *     on a different thread.</li>
+  * </ul>
+  */
+-public class Fetcher<K, V> extends AbstractFetch<K, V> {
++public class Fetcher<K, V> extends AbstractFetch {
+ 
++    private final Logger log;
++    private final ConsumerNetworkClient client;
+     private final FetchCollector<K, V> fetchCollector;
+ 
+     public Fetcher(LogContext logContext,
+                    ConsumerNetworkClient client,
+                    ConsumerMetadata metadata,
+                    SubscriptionState subscriptions,
+-                   FetchConfig<K, V> fetchConfig,
++                   FetchConfig fetchConfig,
++                   Deserializers<K, V> deserializers,
+                    FetchMetricsManager metricsManager,
+                    Time time) {
+-        super(logContext, client, metadata, subscriptions, fetchConfig, metricsManager, time);
++        super(logContext, metadata, subscriptions, fetchConfig, new FetchBuffer(logContext), metricsManager, time);
++        this.log = logContext.logger(Fetcher.class);
++        this.client = client;
+         this.fetchCollector = new FetchCollector<>(logContext,
+                 metadata,
+                 subscriptions,
+                 fetchConfig,
++                deserializers,
+                 metricsManager,
+                 time);
+     }
+ 
++    @Override
++    protected boolean isUnavailable(Node node) {
++        return client.isUnavailable(node);
++    }
++
++    @Override
++    protected void maybeThrowAuthFailure(Node node) {
++        client.maybeThrowAuthFailure(node);
++    }
++
+     public void clearBufferedDataForUnassignedPartitions(Collection<TopicPartition> assignedPartitions) {
+         fetchBuffer.retainAll(new HashSet<>(assignedPartitions));
+     }
+@@ -87,14 +107,14 @@ public class Fetcher<K, V> extends AbstractFetch<K, V> {
+                 @Override
+                 public void onSuccess(ClientResponse resp) {
+                     synchronized (Fetcher.this) {
+-                        handleFetchResponse(fetchTarget, data, resp);
++                        handleFetchSuccess(fetchTarget, data, resp);
+                     }
+                 }
+ 
+                 @Override
+                 public void onFailure(RuntimeException e) {
+                     synchronized (Fetcher.this) {
+-                        handleFetchResponse(fetchTarget, e);
++                        handleFetchFailure(fetchTarget, data, e);
+                     }
+                 }
+             };
+@@ -109,4 +129,64 @@ public class Fetcher<K, V> extends AbstractFetch<K, V> {
+     public Fetch<K, V> collectFetch() {
+         return fetchCollector.collectFetch(fetchBuffer);
+     }
+-}
+\ No newline at end of file
++
++    /**
++     * This method is called by {@link #close(Timer)} which is guarded by the {@code IdempotentCloser}) such as to only
++     * be executed once the first time that any of the {@link #close()} methods are called. Subclasses can override
++     * this method without the need for extra synchronization at the instance level.
++     *
++     * @param timer Timer to enforce time limit
++     */
++    // Visible for testing
++    @Override
++    protected void closeInternal(Timer timer) {
++        // we do not need to re-enable wake-ups since we are closing already
++        client.disableWakeups();
++        maybeCloseFetchSessions(timer);
++        super.closeInternal(timer);
++    }
++
++    /**
++     * Sends a close-fetch-session request to each node that has an active fetch session and polls the network client
++     * until all requests are done or the timer expires.
++     */
++    protected void maybeCloseFetchSessions(final Timer timer) {
++        final List<RequestFuture<ClientResponse>> requestFutures = new ArrayList<>();
++        Map<Node, FetchSessionHandler.FetchRequestData> fetchRequestMap = prepareCloseFetchSessionRequests();
++
++        for (Map.Entry<Node, FetchSessionHandler.FetchRequestData> entry : fetchRequestMap.entrySet()) {
++            final Node fetchTarget = entry.getKey();
++            final FetchSessionHandler.FetchRequestData data = entry.getValue();
++            final FetchRequest.Builder request = createFetchRequest(fetchTarget, data);
++            final RequestFuture<ClientResponse> responseFuture = client.send(fetchTarget, request);
++
++            responseFuture.addListener(new RequestFutureListener<ClientResponse>() {
++                @Override
++                public void onSuccess(ClientResponse value) {
++                    handleCloseFetchSessionSuccess(fetchTarget, data, value);
++                }
++
++                @Override
++                public void onFailure(RuntimeException e) {
++                    handleCloseFetchSessionFailure(fetchTarget, data, e);
++                }
++            });
++
++            requestFutures.add(responseFuture);
++        }
++
++        // Poll to ensure that request has been written to the socket. Wait until either the timer has expired or until
++        // all requests have received a response.
++        while (timer.notExpired() && !requestFutures.stream().allMatch(RequestFuture::isDone)) {
++            client.poll(timer, null, true);
++        }
++
++        if (!requestFutures.stream().allMatch(RequestFuture::isDone)) {
++            // we ran out of time before completing all futures. It is ok since we don't want to block the shutdown
++            // here.
++            log.debug("All requests couldn't be sent in the specific timeout period {}ms. " +
++                    "This may result in unnecessary fetch sessions at the broker. Consider increasing the timeout passed for " +
++                    "KafkaConsumer.close(Duration timeout)", timer.timeoutMs());
++        }
++    }
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/NetworkClientDelegate.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/NetworkClientDelegate.java
+index 2e61b0788f..d7c001abb4 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/NetworkClientDelegate.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/NetworkClientDelegate.java
+@@ -16,8 +16,10 @@
+  */
+ package org.apache.kafka.clients.consumer.internals;
+ 
++import org.apache.kafka.clients.ApiVersions;
+ import org.apache.kafka.clients.ClientRequest;
+ import org.apache.kafka.clients.ClientResponse;
++import org.apache.kafka.clients.ClientUtils;
+ import org.apache.kafka.clients.KafkaClient;
+ import org.apache.kafka.clients.NetworkClientUtils;
+ import org.apache.kafka.clients.RequestCompletionHandler;
+@@ -26,6 +28,8 @@ import org.apache.kafka.common.Node;
+ import org.apache.kafka.common.errors.AuthenticationException;
+ import org.apache.kafka.common.errors.DisconnectException;
+ import org.apache.kafka.common.errors.TimeoutException;
++import org.apache.kafka.common.metrics.Metrics;
++import org.apache.kafka.common.metrics.Sensor;
+ import org.apache.kafka.common.requests.AbstractRequest;
+ import org.apache.kafka.common.utils.LogContext;
+ import org.apache.kafka.common.utils.Time;
+@@ -44,6 +48,10 @@ import java.util.Queue;
+ import java.util.Set;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.function.BiConsumer;
++import java.util.function.Supplier;
++
++import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION;
++import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_METRIC_GROUP_PREFIX;
+ 
+ /**
+  * A wrapper around the {@link org.apache.kafka.clients.NetworkClient} to handle network poll and send operations.
+@@ -137,7 +145,7 @@ public class NetworkClientDelegate implements AutoCloseable {
+         return true;
+     }
+ 
+-    private void checkDisconnects(final long currentTimeMs) {
++    public void checkDisconnects(final long currentTimeMs) {
+         // Check the connection of the unsent request. Disconnect the disconnected node if it is unable to be connected.
+         Iterator<UnsentRequest> iter = unsentRequests.iterator();
+         while (iter.hasNext()) {
+@@ -186,6 +194,25 @@ public class NetworkClientDelegate implements AutoCloseable {
+         return client.connectionFailed(node) && client.connectionDelay(node, time.milliseconds()) > 0;
+     }
+ 
++    /**
++     * Check if the node is disconnected and unavailable for immediate reconnection (i.e. if it is in
++     * reconnect backoff window following the disconnect).
++     *
++     * @see NetworkClientUtils#isUnavailable(KafkaClient, Node, Time)
++     */
++    public boolean isUnavailable(final Node node) {
++        return NetworkClientUtils.isUnavailable(client, node, time);
++    }
++
++    /**
++     * Checks for an authentication error on a given node and throws the exception if it exists.
++     *
++     * @see NetworkClientUtils#maybeThrowAuthFailure(KafkaClient, Node)
++     */
++    public void maybeThrowAuthFailure(final Node node) {
++        NetworkClientUtils.maybeThrowAuthFailure(client, node);
++    }
++
+     public void close() throws IOException {
+         this.client.close();
+     }
+@@ -197,14 +224,40 @@ public class NetworkClientDelegate implements AutoCloseable {
+         this.unsentRequests.addAll(requests);
+     }
+ 
++    /**
++     * Enqueues the unsent requests of the given {@link PollResult} so they are sent on the next {@link #poll}.
++     *
++     * @return the time (in milliseconds) until the request manager that produced the result wants to be polled again
++     */
++    public long addAll(PollResult pollResult) {
++        Objects.requireNonNull(pollResult);
++        addAll(pollResult.unsentRequests);
++        return pollResult.timeUntilNextPollMs;
++    }
++
+     public static class PollResult {
++
++        public static final long WAIT_FOREVER = Long.MAX_VALUE;
++        public static final PollResult EMPTY = new PollResult(WAIT_FOREVER);
+         public final long timeUntilNextPollMs;
+         public final List<UnsentRequest> unsentRequests;
+ 
+-        public PollResult(final long timeMsTillNextPoll, final List<UnsentRequest> unsentRequests) {
+-            this.timeUntilNextPollMs = timeMsTillNextPoll;
++        public PollResult(final long timeUntilNextPollMs, final List<UnsentRequest> unsentRequests) {
++            this.timeUntilNextPollMs = timeUntilNextPollMs;
+             this.unsentRequests = Collections.unmodifiableList(unsentRequests);
+         }
++
++        public PollResult(final List<UnsentRequest> unsentRequests) {
++            this(WAIT_FOREVER, unsentRequests);
++        }
++
++        public PollResult(final UnsentRequest unsentRequest) {
++            this(Collections.singletonList(unsentRequest));
++        }
++
++        public PollResult(final long timeUntilNextPollMs) {
++            this(timeUntilNextPollMs, Collections.emptyList());
++        }
+     }
+     public static class UnsentRequest {
+         private final AbstractRequest.Builder<?> requestBuilder;
+@@ -254,6 +307,36 @@ public class NetworkClientDelegate implements AutoCloseable {
+         }
+     }
+ 
++    /**
++     * Creates a {@link Supplier} for deferred creation during invocation by
++     * {@link ConsumerNetworkThread}. The {@link KafkaClient} and the delegate are only built on the first
++     * {@link Supplier#get()}, which is expected to happen on the network thread, and are cached after that.
++     */
++    public static Supplier<NetworkClientDelegate> supplier(final Time time,
++                                                           final LogContext logContext,
++                                                           final ConsumerMetadata metadata,
++                                                           final ConsumerConfig config,
++                                                           final ApiVersions apiVersions,
++                                                           final Metrics metrics,
++                                                           final FetchMetricsManager fetchMetricsManager,
++                                                           final Sensor throttleTimeSensor) {
++        return new CachedSupplier<NetworkClientDelegate>() {
++            @Override
++            protected NetworkClientDelegate create() {
++                KafkaClient client = ClientUtils.createNetworkClient(config,
++                        metrics,
++                        CONSUMER_METRIC_GROUP_PREFIX,
++                        logContext,
++                        apiVersions,
++                        time,
++                        CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION,
++                        metadata,
++                        throttleTimeSensor);
++                return new NetworkClientDelegate(time, config, logContext, client);
++            }
++        };
++    }
++
+     public static class FutureCompletionHandler implements RequestCompletionHandler {
+ 
+         private long responseCompletionTimeMs;
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/RequestManager.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/RequestManager.java
+index 4655f5ef70..e71ac9f64a 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/RequestManager.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/RequestManager.java
+@@ -23,6 +23,21 @@ import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.PollRes
+  * the next poll event.
+  */
+ public interface RequestManager {
++
++    /**
++     * On each loop of {@link ConsumerNetworkThread}, this method will be invoked to give the implementing class a
++     * chance to perform any work and returns the {@link PollResult} with the requests to send, if any.
++     *
++     * @param currentTimeMs The current system time in milliseconds at the time of the poll
++     */
+     PollResult poll(long currentTimeMs);
+ 
++    /**
++     * On shutdown of the {@link ConsumerNetworkThread}, this method will be invoked to give the implementing class
++     * a chance to generate any requests that need to be sent before the network client is closed. By default there
++     * is nothing to send.
++     */
++    default PollResult pollOnClose() {
++        return PollResult.EMPTY;
++    }
+ }
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ApplicationEvent.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ApplicationEvent.java
+index bf9bb1d496..133836da3b 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ApplicationEvent.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ApplicationEvent.java
+@@ -24,7 +24,7 @@ import java.util.Objects;
+ public abstract class ApplicationEvent {
+ 
+     public enum Type {
+-        NOOP, COMMIT, POLL, FETCH_COMMITTED_OFFSET, METADATA_UPDATE, ASSIGNMENT_CHANGE,
++        COMMIT, POLL, FETCH_COMMITTED_OFFSET, METADATA_UPDATE, ASSIGNMENT_CHANGE,
+         LIST_OFFSETS, RESET_POSITIONS, VALIDATE_POSITIONS, TOPIC_METADATA
+     }
+ 
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEvent.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEvent.java
+index b0f7c3454f..6940c41933 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEvent.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEvent.java
+@@ -24,7 +24,7 @@ import java.util.Objects;
+ public abstract class BackgroundEvent {
+ 
+     public enum Type {
+-        NOOP, ERROR,
++        ERROR
+     }
+ 
+     protected final Type type;
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEventHandler.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEventHandler.java
+new file mode 100644
+index 0000000000..1f6213aca8
+--- /dev/null
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEventHandler.java
+@@ -0,0 +1,50 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements. See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License. You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.kafka.clients.consumer.internals.events;
++
++import org.apache.kafka.common.utils.LogContext;
++import org.slf4j.Logger;
++
++import java.util.Objects;
++import java.util.Queue;
++
++/**
++ * An event handler that receives {@link BackgroundEvent background events} from the
++ * {@link org.apache.kafka.clients.consumer.internals.ConsumerNetworkThread consumer network thread} which are
++ * then made available to the application thread via the {@link BackgroundEventProcessor}.
++ */
++public class BackgroundEventHandler {
++
++    private final Logger log;
++    private final Queue<BackgroundEvent> backgroundEventQueue;
++
++    public BackgroundEventHandler(final LogContext logContext, final Queue<BackgroundEvent> backgroundEventQueue) {
++        this.log = logContext.logger(BackgroundEventHandler.class);
++        this.backgroundEventQueue = backgroundEventQueue;
++    }
++
++    /**
++     * Add a {@link BackgroundEvent} to the handler.
++     *
++     * @param event A {@link BackgroundEvent} created by the {@link org.apache.kafka.clients.consumer.internals.ConsumerNetworkThread network thread}
++     */
++    public void add(BackgroundEvent event) {
++        Objects.requireNonNull(event, "BackgroundEvent provided to add must be non-null");
++        log.trace("Enqueued event: {}", event);
++        backgroundEventQueue.add(event);
++    }
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEventProcessor.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEventProcessor.java
+new file mode 100644
+index 0000000000..db81816fd2
+--- /dev/null
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/BackgroundEventProcessor.java
+@@ -0,0 +1,62 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements. See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License. You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.kafka.clients.consumer.internals.events;
++
++import org.apache.kafka.common.utils.LogContext;
++
++import java.util.concurrent.BlockingQueue;
++
++/**
++ * An {@link EventProcessor} that is created and executes in the application thread for the purpose of processing
++ * {@link BackgroundEvent background events} generated by the consumer network thread. Currently these are the
++ * errors that occur in the network thread and need to be propagated to the application thread.
++ */
++public class BackgroundEventProcessor extends EventProcessor<BackgroundEvent> {
++
++    public BackgroundEventProcessor(final LogContext logContext,
++                                    final BlockingQueue<BackgroundEvent> backgroundEventQueue) {
++        super(logContext, backgroundEventQueue);
++    }
++
++    /**
++     * Process the events—if any—that were produced by the consumer network thread. Any error while processing
++     * an event (e.g. an {@link ErrorBackgroundEvent}) is rethrown to the caller, i.e. on the application thread.
++     */
++    @Override
++    public void process() {
++        process((event, error) -> {
++            throw error;
++        });
++    }
++
++    @Override
++    public void process(final BackgroundEvent event) {
++        if (event.type() == BackgroundEvent.Type.ERROR)
++            process((ErrorBackgroundEvent) event);
++        else
++            throw new IllegalArgumentException("Background event type " + event.type() + " was not expected");
++    }
++
++    @Override
++    protected Class<BackgroundEvent> getEventClass() {
++        return BackgroundEvent.class;
++    }
++
++    private void process(final ErrorBackgroundEvent event) {
++        throw event.error();
++    }
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/CompletableApplicationEvent.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/CompletableApplicationEvent.java
+index 8146d9583a..f22b0b61ad 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/CompletableApplicationEvent.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/CompletableApplicationEvent.java
+@@ -27,7 +27,7 @@ import java.util.concurrent.CompletableFuture;
+  *
+  * @param <T>
+  */
+-public abstract class CompletableApplicationEvent<T> extends ApplicationEvent {
++public abstract class CompletableApplicationEvent<T> extends ApplicationEvent implements CompletableEvent<T> {
+ 
+     private final CompletableFuture<T> future;
+ 
+@@ -36,6 +36,7 @@ public abstract class CompletableApplicationEvent<T> extends ApplicationEvent {
+         this.future = new CompletableFuture<>();
+     }
+ 
++    @Override
+     public CompletableFuture<T> future() {
+         return future;
+     }
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/CompletableEvent.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/CompletableEvent.java
+new file mode 100644
+index 0000000000..3dc5bd3d96
+--- /dev/null
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/CompletableEvent.java
+@@ -0,0 +1,30 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements. See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License. You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.kafka.clients.consumer.internals.events;
++
++import java.util.concurrent.CompletableFuture;
++
++/**
++ * An event that can be completed: the thread that processes the event completes the {@link CompletableFuture future}
++ * and the thread that created the event can wait on it.
++ *
++ * @param <T> Type of the result of the event
++ */
++public interface CompletableEvent<T> {
++
++    CompletableFuture<T> future();
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ErrorBackgroundEvent.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ErrorBackgroundEvent.java
+index 74d3598329..f74d9a7e25 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ErrorBackgroundEvent.java
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/ErrorBackgroundEvent.java
+@@ -16,16 +16,23 @@
+  */
+ package org.apache.kafka.clients.consumer.internals.events;
+ 
++import org.apache.kafka.clients.consumer.internals.ConsumerUtils;
++import org.apache.kafka.common.KafkaException;
++
+ public class ErrorBackgroundEvent extends BackgroundEvent {
+ 
+-    private final Throwable error;
++    private final RuntimeException error;
+ 
+-    public ErrorBackgroundEvent(Throwable error) {
++    /**
++     * @param t Error to report to the application thread; if it is not a {@link RuntimeException}
++     *          it is wrapped in a {@link KafkaException}
++     */
++    public ErrorBackgroundEvent(Throwable t) {
+         super(Type.ERROR);
+-        this.error = error;
++        this.error = ConsumerUtils.maybeWrapAsKafkaException(t);
+     }
+ 
+-    public Throwable error() {
++    public RuntimeException error() {
+         return error;
+     }
+ 
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/EventHandler.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/EventHandler.java
+deleted file mode 100644
+index 75075fc277..0000000000
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/EventHandler.java
++++ /dev/null
+@@ -1,65 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals.events;
+-
+-import org.apache.kafka.common.utils.Timer;
+-
+-import java.io.Closeable;
+-import java.util.Optional;
+-import java.util.concurrent.Future;
+-import java.util.concurrent.TimeUnit;
+-
+-/**
+- * This class interfaces with the KafkaConsumer and the background thread. It allows the caller to enqueue events via
+- * the {@code add()} method and to retrieve events via the {@code poll()} method.
+- */
+-public interface EventHandler extends Closeable {
+-    /**
+-     * Retrieves and removes a {@link BackgroundEvent}. Returns an empty Optional instance if there is nothing.
+-     * @return an Optional of {@link BackgroundEvent} if the value is present. Otherwise, an empty Optional.
+-     */
+-    Optional<BackgroundEvent> poll();
+-
+-    /**
+-     * Check whether there are pending {@code BackgroundEvent} await to be consumed.
+-     * @return true if there are no pending event
+-     */
+-    boolean isEmpty();
+-
+-    /**
+-     * Add an {@link ApplicationEvent} to the handler. The method returns true upon successful add; otherwise returns
+-     * false.
+-     * @param event     An {@link ApplicationEvent} created by the polling thread.
+-     * @return          true upon successful add.
+-     */
+-    boolean add(ApplicationEvent event);
+-
+-    /**
+-     * Add a {@link CompletableApplicationEvent} to the handler. The method blocks waiting for the result, and will
+-     * return the result value upon successful completion; otherwise throws an error.
+-     *
+-     * <p/>
+-     *
+-     * See {@link CompletableApplicationEvent#get(Timer)} and {@link Future#get(long, TimeUnit)} for more details.
+-     *
+-     * @param event A {@link CompletableApplicationEvent} created by the polling thread.
+-     * @param timer Timer for which to wait for the event to complete
+-     * @return      Value that is the result of the event
+-     * @param <T>   Type of return value of the event
+-     */
+-    <T> T addAndGet(final CompletableApplicationEvent<T> event, final Timer timer);
+-}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/EventProcessor.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/EventProcessor.java
+new file mode 100644
+index 0000000000..9ee7fc87bf
+--- /dev/null
++++ b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/EventProcessor.java
+@@ -0,0 +1,165 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements. See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License. You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.kafka.clients.consumer.internals.events;
++
++import org.apache.kafka.clients.consumer.internals.ConsumerUtils;
++import org.apache.kafka.common.KafkaException;
++import org.apache.kafka.common.internals.IdempotentCloser;
++import org.apache.kafka.common.utils.LogContext;
++import org.slf4j.Logger;
++
++import java.io.Closeable;
++import java.util.LinkedList;
++import java.util.List;
++import java.util.Objects;
++import java.util.concurrent.BlockingQueue;
++
++/**
++ * An {@link EventProcessor} is the means by which events <em>produced</em> by thread <em>A</em> are
++ * <em>processed</em> by thread <em>B</em>. By definition, threads <em>A</em> and <em>B</em> run in parallel to
++ * each other, so a thread-safe queue is used to pass the events between them.
++ *
++ * <p/>
++ *
++ * Because the events are produced and processed by different threads, the processing is not done on the
++ * producing thread: it is up to the processing thread to call {@link #process()} (or one of its variants) to
++ * drain the queue and handle each event.
++ *
++ * <p/>
++ *
++ * Closing the processor is idempotent. When it is closed, any events remaining in the queue that have a
++ * {@link CompletableEvent#future() future} are completed exceptionally so nobody waits on them forever.
++ *
++ * @param <T> Event type that is processed
++ */
++public abstract class EventProcessor<T> implements Closeable {
++
++    private final Logger log;
++    private final BlockingQueue<T> eventQueue;
++    private final IdempotentCloser closer;
++
++    protected EventProcessor(final LogContext logContext, final BlockingQueue<T> eventQueue) {
++        this.log = logContext.logger(EventProcessor.class);
++        this.eventQueue = eventQueue;
++        this.closer = new IdempotentCloser();
++    }
++
++    /**
++     * Drains the queue and processes each of the events that were in it. How errors are handled is up to the
++     * implementation.
++     */
++    public abstract void process();
++
++    /**
++     * Processes a single event.
++     *
++     * @param event Event to process
++     */
++    public abstract void process(T event);
++
++    /**
++     * Returns the type of event processed, used for error messages.
++     */
++    protected abstract Class<T> getEventClass();
++
++    protected interface ProcessErrorHandler<T> {
++
++        /**
++         * Invoked if processing of the event failed.
++         *
++         * @param event Event whose processing failed
++         * @param error Error that was thrown while processing it, wrapped as a {@link RuntimeException}
++         */
++        void onError(T event, RuntimeException error);
++    }
++
++    /**
++     * Drains all available events from the queue and processes them one at a time. If the processing of an event
++     * throws, the error is given to the {@link ProcessErrorHandler} and the remaining events are still processed.
++     * Only if the handler itself throws is the exception propagated to the caller (and the events following the
++     * failed one in this batch are not processed).
++     *
++     * @param processErrorHandler Invoked for each error thrown while processing an event
++     */
++    protected void process(ProcessErrorHandler<T> processErrorHandler) {
++        String eventClassName = getEventClass().getSimpleName();
++        closer.assertOpen(() -> String.format("The processor was previously closed, so no further %s processing can occur", eventClassName));
++
++        List<T> events = drain();
++
++        if (events.isEmpty()) {
++            log.trace("No events to process");
++            return;
++        }
++
++        try {
++            log.trace("Starting processing of {} {}(s)", events.size(), eventClassName);
++
++            for (T event : events) {
++                try {
++                    Objects.requireNonNull(event, () -> String.format("Attempted to process a null %s", eventClassName));
++                    log.trace("Processing event: {}", event);
++                    process(event);
++                } catch (Throwable t) {
++                    RuntimeException error = ConsumerUtils.maybeWrapAsKafkaException(t);
++                    log.debug("An error occurred when processing the event: {}", error.getMessage(), error);
++                    processErrorHandler.onError(event, error);
++                }
++            }
++        } finally {
++            log.trace("Completed processing");
++        }
++    }
++
++    /**
++     * It is possible for the consumer to close before complete processing all the events in the queue. In
++     * this case, we need to throw an exception to notify the user the consumer is closed.
++     */
++    private void closeInternal() {
++        log.trace("Closing event processor");
++        List<T> incompleteEvents = drain();
++
++        if (incompleteEvents.isEmpty())
++            return;
++
++        KafkaException exception = new KafkaException("The consumer is closed");
++
++        // Check each of the events and if it has a Future that is incomplete, complete it exceptionally.
++        incompleteEvents
++                .stream()
++                .filter(e -> e instanceof CompletableEvent)
++                .map(e -> ((CompletableEvent<?>) e).future())
++                .filter(f -> !f.isDone())
++                .forEach(f -> f.completeExceptionally(exception));
++
++        log.debug("Discarding {} {}s because the consumer is closing", incompleteEvents.size(), getEventClass().getSimpleName());
++    }
++
++    /**
++     * Moves all the events from the queue to the returned list.
++     */
++    private List<T> drain() {
++        LinkedList<T> events = new LinkedList<>();
++        eventQueue.drainTo(events);
++        return events;
++    }
++
++    @Override
++    public void close() {
++        closer.close(this::closeInternal, () -> log.warn("The event processor was already closed"));
++    }
++}
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/NoopApplicationEvent.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/NoopApplicationEvent.java
+deleted file mode 100644
+index 22817fb2ba..0000000000
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/NoopApplicationEvent.java
++++ /dev/null
+@@ -1,62 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals.events;
+-
+-import java.util.Objects;
+-
+-/**
+- * The event is a no-op, but is intentionally left here for demonstration and test purposes.
+- */
+-public class NoopApplicationEvent extends ApplicationEvent {
+-
+-    private final String message;
+-
+-    public NoopApplicationEvent(final String message) {
+-        super(Type.NOOP);
+-        this.message = Objects.requireNonNull(message);
+-    }
+-
+-    public String message() {
+-        return message;
+-    }
+-
+-    @Override
+-    public boolean equals(Object o) {
+-        if (this == o) return true;
+-        if (o == null || getClass() != o.getClass()) return false;
+-        if (!super.equals(o)) return false;
+-
+-        NoopApplicationEvent that = (NoopApplicationEvent) o;
+-
+-        return message.equals(that.message);
+-    }
+-
+-    @Override
+-    public int hashCode() {
+-        int result = super.hashCode();
+-        result = 31 * result + message.hashCode();
+-        return result;
+-    }
+-
+-    @Override
+-    public String toString() {
+-        return "NoopApplicationEvent{" +
+-                toStringBase() +
+-                ",message='" + message + '\'' +
+-                '}';
+-    }
+-}
+\ No newline at end of file
+diff --git a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/NoopBackgroundEvent.java b/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/NoopBackgroundEvent.java
+deleted file mode 100644
+index c1cbcc253a..0000000000
+--- a/clients/src/main/java/org/apache/kafka/clients/consumer/internals/events/NoopBackgroundEvent.java
++++ /dev/null
+@@ -1,62 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals.events;
+-
+-import java.util.Objects;
+-
+-/**
+- * No-op event. Intentionally left it here for demonstration purpose.
+- */
+-public class NoopBackgroundEvent extends BackgroundEvent {
+-
+-    private final String message;
+-
+-    public NoopBackgroundEvent(final String message) {
+-        super(Type.NOOP);
+-        this.message = Objects.requireNonNull(message);
+-    }
+-
+-    public String message() {
+-        return message;
+-    }
+-
+-    @Override
+-    public boolean equals(Object o) {
+-        if (this == o) return true;
+-        if (o == null || getClass() != o.getClass()) return false;
+-        if (!super.equals(o)) return false;
+-
+-        NoopBackgroundEvent that = (NoopBackgroundEvent) o;
+-
+-        return message.equals(that.message);
+-    }
+-
+-    @Override
+-    public int hashCode() {
+-        int result = super.hashCode();
+-        result = 31 * result + message.hashCode();
+-        return result;
+-    }
+-
+-    @Override
+-    public String toString() {
+-        return "NoopBackgroundEvent{" +
+-                toStringBase() +
+-                ", message='" + message + '\'' +
+-                '}';
+-    }
+-}
+\ No newline at end of file
+diff --git a/clients/src/test/java/org/apache/kafka/clients/consumer/internals/DefaultBackgroundThreadTest.java b/clients/src/test/java/org/apache/kafka/clients/consumer/internals/DefaultBackgroundThreadTest.java
+deleted file mode 100644
+index a7d8ac0a61..0000000000
+--- a/clients/src/test/java/org/apache/kafka/clients/consumer/internals/DefaultBackgroundThreadTest.java
++++ /dev/null
+@@ -1,436 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals;
+-
+-import org.apache.kafka.clients.GroupRebalanceConfig;
+-import org.apache.kafka.clients.consumer.ConsumerConfig;
+-import org.apache.kafka.clients.consumer.LogTruncationException;
+-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+-import org.apache.kafka.clients.consumer.internals.events.ApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.ApplicationEventProcessor;
+-import org.apache.kafka.clients.consumer.internals.events.AssignmentChangeApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
+-import org.apache.kafka.clients.consumer.internals.events.CommitApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.ListOffsetsApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.NewTopicsMetadataUpdateRequestEvent;
+-import org.apache.kafka.clients.consumer.internals.events.NoopApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.ResetPositionsApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.TopicMetadataApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.ValidatePositionsApplicationEvent;
+-import org.apache.kafka.common.TopicPartition;
+-import org.apache.kafka.common.errors.TopicAuthorizationException;
+-import org.apache.kafka.common.message.FindCoordinatorRequestData;
+-import org.apache.kafka.common.requests.FindCoordinatorRequest;
+-import org.apache.kafka.common.serialization.StringDeserializer;
+-import org.apache.kafka.common.utils.LogContext;
+-import org.apache.kafka.common.utils.MockTime;
+-import org.apache.kafka.common.utils.Time;
+-import org.apache.kafka.test.TestUtils;
+-import org.junit.jupiter.api.BeforeEach;
+-import org.junit.jupiter.api.Test;
+-import org.mockito.Mockito;
+-
+-import java.util.ArrayList;
+-import java.util.Collections;
+-import java.util.HashMap;
+-import java.util.Map;
+-import java.util.Optional;
+-import java.util.Properties;
+-import java.util.concurrent.BlockingQueue;
+-import java.util.concurrent.LinkedBlockingQueue;
+-
+-import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
+-import static org.apache.kafka.clients.consumer.ConsumerConfig.RETRY_BACKOFF_MS_CONFIG;
+-import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
+-import static org.junit.jupiter.api.Assertions.assertEquals;
+-import static org.junit.jupiter.api.Assertions.assertFalse;
+-import static org.junit.jupiter.api.Assertions.assertThrows;
+-import static org.junit.jupiter.api.Assertions.assertTrue;
+-import static org.mockito.ArgumentMatchers.any;
+-import static org.mockito.ArgumentMatchers.anyLong;
+-import static org.mockito.Mockito.doThrow;
+-import static org.mockito.Mockito.mock;
+-import static org.mockito.Mockito.spy;
+-import static org.mockito.Mockito.times;
+-import static org.mockito.Mockito.verify;
+-import static org.mockito.Mockito.when;
+-
+-@SuppressWarnings("ClassDataAbstractionCoupling")
+-public class DefaultBackgroundThreadTest {
+-    private static final long RETRY_BACKOFF_MS = 100;
+-    private final Properties properties = new Properties();
+-    private MockTime time;
+-    private ConsumerMetadata metadata;
+-    private NetworkClientDelegate networkClient;
+-    private BlockingQueue<BackgroundEvent> backgroundEventsQueue;
+-    private BlockingQueue<ApplicationEvent> applicationEventsQueue;
+-    private ApplicationEventProcessor applicationEventProcessor;
+-    private CoordinatorRequestManager coordinatorManager;
+-    private OffsetsRequestManager offsetsRequestManager;
+-    private ErrorEventHandler errorEventHandler;
+-    private final int requestTimeoutMs = 500;
+-    private GroupState groupState;
+-    private CommitRequestManager commitManager;
+-    private TopicMetadataRequestManager topicMetadataRequestManager;
+-    private HeartbeatRequestManager heartbeatRequestManager;
+-
+-    @BeforeEach
+-    @SuppressWarnings("unchecked")
+-    public void setup() {
+-        this.time = new MockTime(0);
+-        this.metadata = mock(ConsumerMetadata.class);
+-        this.networkClient = mock(NetworkClientDelegate.class);
+-        this.applicationEventsQueue = (BlockingQueue<ApplicationEvent>) mock(BlockingQueue.class);
+-        this.backgroundEventsQueue = (BlockingQueue<BackgroundEvent>) mock(BlockingQueue.class);
+-        this.applicationEventProcessor = mock(ApplicationEventProcessor.class);
+-        this.coordinatorManager = mock(CoordinatorRequestManager.class);
+-        this.offsetsRequestManager = mock(OffsetsRequestManager.class);
+-        this.heartbeatRequestManager = mock(HeartbeatRequestManager.class);
+-        this.errorEventHandler = mock(ErrorEventHandler.class);
+-        GroupRebalanceConfig rebalanceConfig = new GroupRebalanceConfig(
+-                100,
+-                100,
+-                100,
+-                "group_id",
+-                Optional.empty(),
+-                100,
+-                1000,
+-                true);
+-        this.groupState = new GroupState(rebalanceConfig);
+-        this.commitManager = mock(CommitRequestManager.class);
+-        this.topicMetadataRequestManager = mock(TopicMetadataRequestManager.class);
+-    }
+-
+-    @Test
+-    public void testStartupAndTearDown() throws InterruptedException {
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        backgroundThread.start();
+-        TestUtils.waitForCondition(backgroundThread::isRunning, "Failed awaiting for the background thread to be running");
+-        backgroundThread.close();
+-        assertFalse(backgroundThread.isRunning());
+-    }
+-
+-    @Test
+-    public void testApplicationEvent() {
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        ApplicationEvent e = new NoopApplicationEvent("noop event");
+-        this.applicationEventsQueue.add(e);
+-        backgroundThread.runOnce();
+-        verify(applicationEventProcessor, times(1)).process(e);
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    public void testMetadataUpdateEvent() {
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        this.applicationEventProcessor = new ApplicationEventProcessor(
+-                this.backgroundEventsQueue,
+-                mockRequestManagers(),
+-                metadata);
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        ApplicationEvent e = new NewTopicsMetadataUpdateRequestEvent();
+-        this.applicationEventsQueue.add(e);
+-        backgroundThread.runOnce();
+-        verify(metadata).requestUpdateForNewTopics();
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    public void testCommitEvent() {
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        ApplicationEvent e = new CommitApplicationEvent(new HashMap<>());
+-        this.applicationEventsQueue.add(e);
+-        backgroundThread.runOnce();
+-        verify(applicationEventProcessor).process(any(CommitApplicationEvent.class));
+-        backgroundThread.close();
+-    }
+-
+-
+-    @Test
+-    public void testListOffsetsEventIsProcessed() {
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        Map<TopicPartition, Long> timestamps = Collections.singletonMap(new TopicPartition("topic1", 1), 5L);
+-        ApplicationEvent e = new ListOffsetsApplicationEvent(timestamps, true);
+-        this.applicationEventsQueue.add(e);
+-        backgroundThread.runOnce();
+-        verify(applicationEventProcessor).process(any(ListOffsetsApplicationEvent.class));
+-        assertTrue(applicationEventsQueue.isEmpty());
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    public void testResetPositionsEventIsProcessed() {
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        ResetPositionsApplicationEvent e = new ResetPositionsApplicationEvent();
+-        this.applicationEventsQueue.add(e);
+-        backgroundThread.runOnce();
+-        verify(applicationEventProcessor).process(any(ResetPositionsApplicationEvent.class));
+-        assertTrue(applicationEventsQueue.isEmpty());
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    public void testResetPositionsProcessFailure() {
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        applicationEventProcessor = spy(new ApplicationEventProcessor(
+-                this.backgroundEventsQueue,
+-                mockRequestManagers(),
+-                metadata));
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-
+-        TopicAuthorizationException authException = new TopicAuthorizationException("Topic authorization failed");
+-        doThrow(authException).when(offsetsRequestManager).resetPositionsIfNeeded();
+-
+-        ResetPositionsApplicationEvent event = new ResetPositionsApplicationEvent();
+-        this.applicationEventsQueue.add(event);
+-        assertThrows(TopicAuthorizationException.class, backgroundThread::runOnce);
+-
+-        verify(applicationEventProcessor).process(any(ResetPositionsApplicationEvent.class));
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    public void testValidatePositionsEventIsProcessed() {
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        ValidatePositionsApplicationEvent e = new ValidatePositionsApplicationEvent();
+-        this.applicationEventsQueue.add(e);
+-        backgroundThread.runOnce();
+-        verify(applicationEventProcessor).process(any(ValidatePositionsApplicationEvent.class));
+-        assertTrue(applicationEventsQueue.isEmpty());
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    public void testValidatePositionsProcessFailure() {
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        applicationEventProcessor = spy(new ApplicationEventProcessor(
+-                this.backgroundEventsQueue,
+-                mockRequestManagers(),
+-                metadata));
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-
+-        LogTruncationException logTruncationException = new LogTruncationException(Collections.emptyMap(), Collections.emptyMap());
+-        doThrow(logTruncationException).when(offsetsRequestManager).validatePositionsIfNeeded();
+-
+-        ValidatePositionsApplicationEvent event = new ValidatePositionsApplicationEvent();
+-        this.applicationEventsQueue.add(event);
+-        assertThrows(LogTruncationException.class, backgroundThread::runOnce);
+-
+-        verify(applicationEventProcessor).process(any(ValidatePositionsApplicationEvent.class));
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    public void testAssignmentChangeEvent() {
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        this.backgroundEventsQueue = new LinkedBlockingQueue<>();
+-        this.applicationEventProcessor = spy(new ApplicationEventProcessor(
+-                this.backgroundEventsQueue,
+-                mockRequestManagers(),
+-                metadata));
+-
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        HashMap<TopicPartition, OffsetAndMetadata> offset = mockTopicPartitionOffset();
+-
+-        final long currentTimeMs = time.milliseconds();
+-        ApplicationEvent e = new AssignmentChangeApplicationEvent(offset, currentTimeMs);
+-        this.applicationEventsQueue.add(e);
+-
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-
+-        backgroundThread.runOnce();
+-        verify(applicationEventProcessor).process(any(AssignmentChangeApplicationEvent.class));
+-        verify(networkClient, times(1)).poll(anyLong(), anyLong());
+-        verify(commitManager, times(1)).updateAutoCommitTimer(currentTimeMs);
+-        verify(commitManager, times(1)).maybeAutoCommit(offset);
+-
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    void testFindCoordinator() {
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        backgroundThread.runOnce();
+-        Mockito.verify(coordinatorManager, times(1)).poll(anyLong());
+-        Mockito.verify(networkClient, times(1)).poll(anyLong(), anyLong());
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    void testFetchTopicMetadata() {
+-        this.applicationEventsQueue = new LinkedBlockingQueue<>();
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        when(coordinatorManager.poll(anyLong())).thenReturn(mockPollCoordinatorResult());
+-        when(commitManager.poll(anyLong())).thenReturn(mockPollCommitResult());
+-        when(offsetsRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(topicMetadataRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        when(heartbeatRequestManager.poll(anyLong())).thenReturn(emptyPollResults());
+-        this.applicationEventsQueue.add(new TopicMetadataApplicationEvent("topic"));
+-        backgroundThread.runOnce();
+-        verify(applicationEventProcessor).process(any(TopicMetadataApplicationEvent.class));
+-        backgroundThread.close();
+-    }
+-
+-    @Test
+-    void testPollResultTimer() {
+-        DefaultBackgroundThread backgroundThread = mockBackgroundThread();
+-        // purposely setting a non MAX time to ensure it is returning Long.MAX_VALUE upon success
+-        NetworkClientDelegate.PollResult success = new NetworkClientDelegate.PollResult(
+-                10,
+-                Collections.singletonList(findCoordinatorUnsentRequest(time, requestTimeoutMs)));
+-        assertEquals(10, backgroundThread.handlePollResult(success));
+-
+-        NetworkClientDelegate.PollResult failure = new NetworkClientDelegate.PollResult(
+-                10,
+-                new ArrayList<>());
+-        assertEquals(10, backgroundThread.handlePollResult(failure));
+-    }
+-
+-    private HashMap<TopicPartition, OffsetAndMetadata> mockTopicPartitionOffset() {
+-        final TopicPartition t0 = new TopicPartition("t0", 2);
+-        final TopicPartition t1 = new TopicPartition("t0", 3);
+-        HashMap<TopicPartition, OffsetAndMetadata> topicPartitionOffsets = new HashMap<>();
+-        topicPartitionOffsets.put(t0, new OffsetAndMetadata(10L));
+-        topicPartitionOffsets.put(t1, new OffsetAndMetadata(20L));
+-        return topicPartitionOffsets;
+-    }
+-
+-    private RequestManagers mockRequestManagers() {
+-        return new RequestManagers(
+-            offsetsRequestManager,
+-            topicMetadataRequestManager,
+-            Optional.of(coordinatorManager),
+-            Optional.of(commitManager),
+-            Optional.of(heartbeatRequestManager));
+-    }
+-
+-    private static NetworkClientDelegate.UnsentRequest findCoordinatorUnsentRequest(
+-            final Time time,
+-            final long timeout
+-    ) {
+-        NetworkClientDelegate.UnsentRequest req = new NetworkClientDelegate.UnsentRequest(
+-                new FindCoordinatorRequest.Builder(
+-                        new FindCoordinatorRequestData()
+-                                .setKeyType(FindCoordinatorRequest.CoordinatorType.TRANSACTION.id())
+-                                .setKey("foobar")),
+-                Optional.empty());
+-        req.setTimer(time, timeout);
+-        return req;
+-    }
+-
+-    private DefaultBackgroundThread mockBackgroundThread() {
+-        properties.put(KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+-        properties.put(VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+-        properties.put(RETRY_BACKOFF_MS_CONFIG, RETRY_BACKOFF_MS);
+-
+-        return new DefaultBackgroundThread(
+-            this.time,
+-            new ConsumerConfig(properties),
+-            new LogContext(),
+-            applicationEventsQueue,
+-            backgroundEventsQueue,
+-            this.errorEventHandler,
+-            applicationEventProcessor,
+-            this.metadata,
+-            this.networkClient,
+-            this.groupState,
+-            this.coordinatorManager,
+-            this.commitManager,
+-            this.offsetsRequestManager,
+-            this.topicMetadataRequestManager,
+-            this.heartbeatRequestManager);
+-    }
+-
+-    private NetworkClientDelegate.PollResult mockPollCoordinatorResult() {
+-        return new NetworkClientDelegate.PollResult(
+-            RETRY_BACKOFF_MS,
+-            Collections.singletonList(findCoordinatorUnsentRequest(time, requestTimeoutMs)));
+-    }
+-
+-    private NetworkClientDelegate.PollResult mockPollCommitResult() {
+-        return new NetworkClientDelegate.PollResult(
+-            RETRY_BACKOFF_MS,
+-            Collections.singletonList(findCoordinatorUnsentRequest(time, requestTimeoutMs)));
+-    }
+-
+-    private NetworkClientDelegate.PollResult emptyPollResults() {
+-        return new NetworkClientDelegate.PollResult(Long.MAX_VALUE, Collections.emptyList());
+-    }
+-}
+\ No newline at end of file
+diff --git a/clients/src/test/java/org/apache/kafka/clients/consumer/internals/DefaultEventHandlerTest.java b/clients/src/test/java/org/apache/kafka/clients/consumer/internals/DefaultEventHandlerTest.java
+deleted file mode 100644
+index 7e4de791da..0000000000
+--- a/clients/src/test/java/org/apache/kafka/clients/consumer/internals/DefaultEventHandlerTest.java
++++ /dev/null
+@@ -1,81 +0,0 @@
+-/*
+- * Licensed to the Apache Software Foundation (ASF) under one or more
+- * contributor license agreements. See the NOTICE file distributed with
+- * this work for additional information regarding copyright ownership.
+- * The ASF licenses this file to You under the Apache License, Version 2.0
+- * (the "License"); you may not use this file except in compliance with
+- * the License. You may obtain a copy of the License at
+- *
+- *    http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- */
+-package org.apache.kafka.clients.consumer.internals;
+-
+-import org.apache.kafka.clients.GroupRebalanceConfig;
+-import org.apache.kafka.clients.consumer.internals.events.ApplicationEvent;
+-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
+-import org.apache.kafka.clients.consumer.internals.events.NoopApplicationEvent;
+-import org.apache.kafka.common.serialization.StringDeserializer;
+-import org.junit.jupiter.api.BeforeEach;
+-import org.junit.jupiter.api.Test;
+-
+-import java.util.Optional;
+-import java.util.Properties;
+-import java.util.concurrent.BlockingQueue;
+-import java.util.concurrent.LinkedBlockingQueue;
+-
+-import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
+-import static org.apache.kafka.clients.consumer.ConsumerConfig.RETRY_BACKOFF_MS_CONFIG;
+-import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
+-import static org.junit.jupiter.api.Assertions.assertEquals;
+-import static org.junit.jupiter.api.Assertions.assertFalse;
+-import static org.junit.jupiter.api.Assertions.assertTrue;
+-import static org.mockito.Mockito.mock;
+-import static org.mockito.Mockito.times;
+-import static org.mockito.Mockito.verify;
+-
+-public class DefaultEventHandlerTest {
+-    private int sessionTimeoutMs = 1000;
+-    private int rebalanceTimeoutMs = 1000;
+-    private int heartbeatIntervalMs = 1000;
+-    private String groupId = "g-1";
+-    private Optional<String> groupInstanceId = Optional.of("g-1");
+-    private long retryBackoffMs = 1000;
+-    private final Properties properties = new Properties();
+-    private GroupRebalanceConfig rebalanceConfig;
+-
+-    @BeforeEach
+-    public void setup() {
+-        properties.put(KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+-        properties.put(VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+-        properties.put(RETRY_BACKOFF_MS_CONFIG, "100");
+-
+-        this.rebalanceConfig = new GroupRebalanceConfig(sessionTimeoutMs,
+-                rebalanceTimeoutMs,
+-                heartbeatIntervalMs,
+-                groupId,
+-                groupInstanceId,
+-                retryBackoffMs,
+-                retryBackoffMs,
+-                true);
+-    }
+-
+-    @Test
+-    public void testBasicHandlerOps() {
+-        final DefaultBackgroundThread bt = mock(DefaultBackgroundThread.class);
+-        final BlockingQueue<ApplicationEvent> aq = new LinkedBlockingQueue<>();
+-        final BlockingQueue<BackgroundEvent> bq = new LinkedBlockingQueue<>();
+-        final DefaultEventHandler handler = new DefaultEventHandler(bt, aq, bq);
+-        assertTrue(handler.isEmpty());
+-        assertFalse(handler.poll().isPresent());
+-        handler.add(new NoopApplicationEvent("test"));
+-        assertEquals(1, aq.size());
+-        handler.close();
+-        verify(bt, times(1)).close();
+-    }
+-}
