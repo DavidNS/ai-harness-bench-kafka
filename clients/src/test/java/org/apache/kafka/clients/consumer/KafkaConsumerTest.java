@@ -18,7 +18,6 @@ package org.apache.kafka.clients.consumer;
 
 import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientRequest;
-import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.GroupRebalanceConfig;
 import org.apache.kafka.clients.KafkaClient;
 import org.apache.kafka.clients.MockClient;
@@ -2674,22 +2673,24 @@ public class KafkaConsumerTest {
         }
         IsolationLevel isolationLevel = IsolationLevel.READ_UNCOMMITTED;
         FetchMetricsManager metricsManager = new FetchMetricsManager(metrics, metricsRegistry.fetcherMetrics);
-        FetchConfig<String, String> fetchConfig = new FetchConfig<>(
-                minBytes,
-                maxBytes,
-                maxWaitMs,
-                fetchSize,
-                maxPollRecords,
-                checkCrcs,
-                CommonClientConfigs.DEFAULT_CLIENT_RACK,
-                new Deserializers<>(keyDeserializer, deserializer),
-                isolationLevel);
+        Map<String, Object> fetchConfigProps = new HashMap<>();
+        fetchConfigProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        fetchConfigProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        fetchConfigProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        fetchConfigProps.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, minBytes);
+        fetchConfigProps.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, maxBytes);
+        fetchConfigProps.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, maxWaitMs);
+        fetchConfigProps.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, fetchSize);
+        fetchConfigProps.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, maxPollRecords);
+        fetchConfigProps.put(ConsumerConfig.CHECK_CRCS_CONFIG, checkCrcs);
+        FetchConfig fetchConfig = new FetchConfig(new ConsumerConfig(fetchConfigProps));
         Fetcher<String, String> fetcher = new Fetcher<>(
                 loggerFactory,
                 consumerClient,
                 metadata,
                 subscription,
                 fetchConfig,
+                new Deserializers<>(keyDeserializer, deserializer),
                 metricsManager,
                 time);
         OffsetFetcher offsetFetcher = new OffsetFetcher(loggerFactory,

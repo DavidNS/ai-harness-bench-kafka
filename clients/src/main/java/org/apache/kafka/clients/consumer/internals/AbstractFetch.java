@@ -22,6 +22,7 @@ import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.internals.IdempotentCloser;
 import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -37,11 +38,9 @@ import org.slf4j.Logger;
 import org.slf4j.helpers.MessageFormatter;
 
 import java.io.Closeable;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -51,46 +50,57 @@ import static org.apache.kafka.clients.consumer.internals.FetchUtils.requestMeta
 
 /**
  * {@code AbstractFetch} represents the basic state and logic for record fetching processing.
- * @param <K> Type for the message key
- * @param <V> Type for the message value
  */
-public abstract class AbstractFetch<K, V> implements Closeable {
+public abstract class AbstractFetch implements Closeable {
 
     private final Logger log;
+    private final IdempotentCloser idempotentCloser = new IdempotentCloser();
     protected final LogContext logContext;
-    protected final ConsumerNetworkClient client;
     protected final ConsumerMetadata metadata;
     protected final SubscriptionState subscriptions;
-    protected final FetchConfig<K, V> fetchConfig;
+    protected final FetchConfig fetchConfig;
     protected final Time time;
     protected final FetchMetricsManager metricsManager;
     protected final FetchBuffer fetchBuffer;
     protected final BufferSupplier decompressionBufferSupplier;
     protected final Set<Integer> nodesWithPendingFetchRequests;
-    protected final IdempotentCloser idempotentCloser = new IdempotentCloser();
 
     private final Map<Integer, FetchSessionHandler> sessionHandlers;
 
     public AbstractFetch(final LogContext logContext,
-                         final ConsumerNetworkClient client,
                          final ConsumerMetadata metadata,
                          final SubscriptionState subscriptions,
-                         final FetchConfig<K, V> fetchConfig,
+                         final FetchConfig fetchConfig,
+                         final FetchBuffer fetchBuffer,
                          final FetchMetricsManager metricsManager,
                          final Time time) {
         this.log = logContext.logger(AbstractFetch.class);
         this.logContext = logContext;
-        this.client = client;
         this.metadata = metadata;
         this.subscriptions = subscriptions;
         this.fetchConfig = fetchConfig;
         this.decompressionBufferSupplier = BufferSupplier.create();
-        this.fetchBuffer = new FetchBuffer(logContext);
+        this.fetchBuffer = fetchBuffer;
         this.sessionHandlers = new HashMap<>();
         this.nodesWithPendingFetchRequests = new HashSet<>();
         this.metricsManager = metricsManager;
         this.time = time;
     }
+
+    /**
+     * Check if the node is disconnected and unavailable for immediate reconnection (i.e. if it is in
+     * reconnect backoff window following the disconnect).
+     *
+     * @param node {@link Node} to check for availability
+     */
+    protected abstract boolean isUnavailable(Node node);
+
+    /**
+     * Checks for an authentication error on a given node and throws the exception if it exists.
+     *
+     * @param node {@link Node} to check for a previous {@link AuthenticationException}; if found it is thrown
+     */
+    protected abstract void maybeThrowAuthFailure(Node node);
 
     /**
      * Return whether we have any completed fetches pending return to the user. This method is thread-safe. Has
@@ -117,9 +127,9 @@ public abstract class AbstractFetch<K, V> implements Closeable {
      * @param data {@link FetchSessionHandler.FetchRequestData} that represents the session data
      * @param resp {@link ClientResponse} from which the {@link FetchResponse} will be retrieved
      */
-    protected void handleFetchResponse(final Node fetchTarget,
-                                       final FetchSessionHandler.FetchRequestData data,
-                                       final ClientResponse resp) {
+    protected void handleFetchSuccess(final Node fetchTarget,
+                                      final FetchSessionHandler.FetchRequestData data,
+                                      final ClientResponse resp) {
         try {
             final FetchResponse response = (FetchResponse) resp.responseBody();
             final FetchSessionHandler handler = sessionHandler(fetchTarget.id());
@@ -194,9 +204,12 @@ public abstract class AbstractFetch<K, V> implements Closeable {
      * Implements the core logic for a failed fetch request/response.
      *
      * @param fetchTarget {@link Node} from which the fetch data was requested
+     * @param data {@link FetchSessionHandler.FetchRequestData} from the request that failed
      * @param t {@link Throwable} representing the error that resulted in the failure
      */
-    protected void handleFetchResponse(final Node fetchTarget, final Throwable t) {
+    protected void handleFetchFailure(final Node fetchTarget,
+                                      final FetchSessionHandler.FetchRequestData data,
+                                      final Throwable t) {
         try {
             final FetchSessionHandler handler = sessionHandler(fetchTarget.id());
 
@@ -210,15 +223,16 @@ public abstract class AbstractFetch<K, V> implements Closeable {
         }
     }
 
-    protected void handleCloseFetchSessionResponse(final Node fetchTarget,
-                                                   final FetchSessionHandler.FetchRequestData data) {
+    protected void handleCloseFetchSessionSuccess(final Node fetchTarget,
+                                                  final FetchSessionHandler.FetchRequestData data,
+                                                  final ClientResponse ignored) {
         int sessionId = data.metadata().sessionId();
         log.debug("Successfully sent a close message for fetch session: {} to node: {}", sessionId, fetchTarget);
     }
 
-    public void handleCloseFetchSessionResponse(final Node fetchTarget,
-                                                final FetchSessionHandler.FetchRequestData data,
-                                                final Throwable t) {
+    protected void handleCloseFetchSessionFailure(final Node fetchTarget,
+                                                  final FetchSessionHandler.FetchRequestData data,
+                                                  final Throwable t) {
         int sessionId = data.metadata().sessionId();
         log.debug("Unable to a close message for fetch session: {} to node: {}. " +
                 "This may result in unnecessary fetch sessions at the broker.", sessionId, fetchTarget, t);
@@ -317,7 +331,11 @@ public abstract class AbstractFetch<K, V> implements Closeable {
         }
     }
 
-    private Map<Node, FetchSessionHandler.FetchRequestData> prepareCloseFetchSessionRequests() {
+    /**
+     * Creates the requests needed to close the fetch sessions with every node that currently has one. Nodes that
+     * are unavailable are skipped as the session will simply expire on the broker.
+     */
+    protected Map<Node, FetchSessionHandler.FetchRequestData> prepareCloseFetchSessionRequests() {
         final Cluster cluster = metadata.fetch();
         Map<Node, FetchSessionHandler.Builder> fetchable = new LinkedHashMap<>();
 
@@ -330,7 +348,7 @@ public abstract class AbstractFetch<K, V> implements Closeable {
                 // skip sending the close request.
                 final Node fetchTarget = cluster.nodeById(fetchTargetNodeId);
 
-                if (fetchTarget == null || client.isUnavailable(fetchTarget)) {
+                if (fetchTarget == null || isUnavailable(fetchTarget)) {
                     log.debug("Skip sending close session request to broker {} since it is not reachable", fetchTarget);
                     return;
                 }
@@ -377,8 +395,8 @@ public abstract class AbstractFetch<K, V> implements Closeable {
             // Use the preferred read replica if set, otherwise the partition's leader
             Node node = selectReadReplica(partition, leaderOpt.get(), currentTimeMs);
 
-            if (client.isUnavailable(node)) {
-                client.maybeThrowAuthFailure(node);
+            if (isUnavailable(node)) {
+                maybeThrowAuthFailure(node);
 
                 // If we try to send during the reconnect backoff window, then the request is just
                 // going to be failed anyway before being sent, so skip sending the request for now
@@ -412,46 +430,6 @@ public abstract class AbstractFetch<K, V> implements Closeable {
         return reqs;
     }
 
-    protected void maybeCloseFetchSessions(final Timer timer) {
-        final List<RequestFuture<ClientResponse>> requestFutures = new ArrayList<>();
-        Map<Node, FetchSessionHandler.FetchRequestData> fetchRequestMap = prepareCloseFetchSessionRequests();
-
-        for (Map.Entry<Node, FetchSessionHandler.FetchRequestData> entry : fetchRequestMap.entrySet()) {
-            final Node fetchTarget = entry.getKey();
-            final FetchSessionHandler.FetchRequestData data = entry.getValue();
-            final FetchRequest.Builder request = createFetchRequest(fetchTarget, data);
-            final RequestFuture<ClientResponse> responseFuture = client.send(fetchTarget, request);
-
-            responseFuture.addListener(new RequestFutureListener<ClientResponse>() {
-                @Override
-                public void onSuccess(ClientResponse value) {
-                    handleCloseFetchSessionResponse(fetchTarget, data);
-                }
-
-                @Override
-                public void onFailure(RuntimeException e) {
-                    handleCloseFetchSessionResponse(fetchTarget, data, e);
-                }
-            });
-
-            requestFutures.add(responseFuture);
-        }
-
-        // Poll to ensure that request has been written to the socket. Wait until either the timer has expired or until
-        // all requests have received a response.
-        while (timer.notExpired() && !requestFutures.stream().allMatch(RequestFuture::isDone)) {
-            client.poll(timer, null, true);
-        }
-
-        if (!requestFutures.stream().allMatch(RequestFuture::isDone)) {
-            // we ran out of time before completing all futures. It is ok since we don't want to block the shutdown
-            // here.
-            log.debug("All requests couldn't be sent in the specific timeout period {}ms. " +
-                    "This may result in unnecessary fetch sessions at the broker. Consider increasing the timeout passed for " +
-                    "KafkaConsumer.close(Duration timeout)", timer.timeoutMs());
-        }
-    }
-
     // Visible for testing
     protected FetchSessionHandler sessionHandler(int node) {
         return sessionHandlers.get(node);
@@ -466,13 +444,15 @@ public abstract class AbstractFetch<K, V> implements Closeable {
      */
     // Visible for testing
     protected void closeInternal(Timer timer) {
-        // we do not need to re-enable wake-ups since we are closing already
-        client.disableWakeups();
-        maybeCloseFetchSessions(timer);
         Utils.closeQuietly(fetchBuffer, "fetchBuffer");
         Utils.closeQuietly(decompressionBufferSupplier, "decompressionBufferSupplier");
     }
 
+    /**
+     * Closes this instance, releasing the resources it holds. Subsequent calls are no-ops.
+     *
+     * @param timer Timer to enforce time limit
+     */
     public void close(final Timer timer) {
         idempotentCloser.close(() -> {
             closeInternal(timer);

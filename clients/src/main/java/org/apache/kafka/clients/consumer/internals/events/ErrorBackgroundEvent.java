@@ -16,16 +16,21 @@
  */
 package org.apache.kafka.clients.consumer.internals.events;
 
+import org.apache.kafka.common.KafkaException;
+
+import java.util.Objects;
+
 public class ErrorBackgroundEvent extends BackgroundEvent {
 
-    private final Throwable error;
+    private final RuntimeException error;
 
-    public ErrorBackgroundEvent(Throwable error) {
+    public ErrorBackgroundEvent(Throwable t) {
         super(Type.ERROR);
-        this.error = error;
+        Objects.requireNonNull(t);
+        this.error = t instanceof RuntimeException ? (RuntimeException) t : new KafkaException(t);
     }
 
-    public Throwable error() {
+    public RuntimeException error() {
         return error;
     }
 

@@ -25,4 +25,12 @@ import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.PollRes
 public interface RequestManager {
     PollResult poll(long currentTimeMs);
 
+    /**
+     * On shutdown of the client, give the manager a last chance to produce requests (for example to close
+     * server-side state such as fetch sessions) that are flushed before the network client is closed.
+     */
+    default PollResult pollOnClose() {
+        return PollResult.EMPTY;
+    }
+
 }

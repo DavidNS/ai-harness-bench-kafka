@@ -79,7 +79,6 @@ import java.util.regex.Pattern;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_JMX_PREFIX;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_METRIC_GROUP_PREFIX;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createConsumerNetworkClient;
-import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createFetchConfig;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createFetchMetricsManager;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createLogContext;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createMetrics;
@@ -753,13 +752,14 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                         config.getBoolean(ConsumerConfig.THROW_ON_FETCH_STABLE_OFFSET_UNSUPPORTED),
                         config.getString(ConsumerConfig.CLIENT_RACK_CONFIG));
             }
-            FetchConfig<K, V> fetchConfig = createFetchConfig(config, this.deserializers);
+            FetchConfig fetchConfig = new FetchConfig(config);
             this.fetcher = new Fetcher<>(
                     logContext,
                     this.client,
                     this.metadata,
                     this.subscriptions,
                     fetchConfig,
+                    this.deserializers,
                     fetchMetricsManager,
                     this.time);
             this.offsetFetcher = new OffsetFetcher(logContext,

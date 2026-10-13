@@ -958,7 +958,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     public boolean refreshCommittedOffsetsIfNeeded(Timer timer) {
         final Set<TopicPartition> initializingPartitions = subscriptions.initializingPartitions();
         final Map<TopicPartition, OffsetAndMetadata> offsets = fetchCommittedOffsets(initializingPartitions, timer);
-        return refreshCommittedOffsets(offsets, this.metadata, this.subscriptions);
+        if (offsets == null) return false;
+        refreshCommittedOffsets(offsets, this.metadata, this.subscriptions);
+        return true;
     }
 
     /**

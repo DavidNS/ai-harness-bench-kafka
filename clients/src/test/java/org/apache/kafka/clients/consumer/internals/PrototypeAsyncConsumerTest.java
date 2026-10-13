@@ -21,15 +21,23 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
+import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.RangeAssignor;
 import org.apache.kafka.clients.consumer.internals.events.ApplicationEvent;
+import org.apache.kafka.clients.consumer.internals.events.ApplicationEventHandler;
 import org.apache.kafka.clients.consumer.internals.events.AssignmentChangeApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
-import org.apache.kafka.clients.consumer.internals.events.EventHandler;
+import org.apache.kafka.clients.consumer.internals.events.CompletableApplicationEvent;
+import org.apache.kafka.clients.consumer.internals.events.ErrorBackgroundEvent;
 import org.apache.kafka.clients.consumer.internals.events.ListOffsetsApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.NewTopicsMetadataUpdateRequestEvent;
 import org.apache.kafka.clients.consumer.internals.events.OffsetFetchApplicationEvent;
+import org.apache.kafka.clients.consumer.internals.events.PollApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.ResetPositionsApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.ValidatePositionsApplicationEvent;
+import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidGroupIdException;
@@ -55,13 +63,14 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.Collections.singleton;
@@ -71,16 +80,19 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_
 import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -93,24 +105,41 @@ public class PrototypeAsyncConsumerTest {
     private LogContext logContext;
     private SubscriptionState subscriptions;
     private ConsumerMetadata metadata;
-    private EventHandler eventHandler;
+    private ApplicationEventHandler eventHandler;
+    private FetchBuffer fetchBuffer;
+    private FetchCollector<String, String> fetchCollector;
+    private ConsumerInterceptors<String, String> interceptors;
+    private BlockingQueue<BackgroundEvent> backgroundEventQueue;
     private Metrics metrics;
 
+    private List<ConsumerPartitionAssignor> assignors = Collections.singletonList(new RangeAssignor());
     private String groupId = "group.id";
     private ConsumerConfig config;
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     public void setup() {
         injectConsumerConfigs();
         this.config = new ConsumerConfig(consumerProps);
         this.logContext = new LogContext();
         this.subscriptions = mock(SubscriptionState.class);
         this.metadata = mock(ConsumerMetadata.class);
-        final DefaultBackgroundThread bt = mock(DefaultBackgroundThread.class);
-        final BlockingQueue<ApplicationEvent> aq = new LinkedBlockingQueue<>();
-        final BlockingQueue<BackgroundEvent> bq = new LinkedBlockingQueue<>();
-        this.eventHandler = spy(new DefaultEventHandler(bt, aq, bq));
+        this.backgroundEventQueue = new LinkedBlockingQueue<>();
+        this.fetchBuffer = new FetchBuffer(logContext);
+        this.interceptors = new ConsumerInterceptors<>(Collections.emptyList());
         this.metrics = new Metrics(time);
+
+        this.fetchCollector = mock(FetchCollector.class);
+        when(fetchCollector.collectFetch(any())).thenReturn(Fetch.empty());
+
+        // Unless a test says otherwise, adding an event and waiting for it behaves like it does for real: the
+        // result is obtained from the event's future, bounded by the timer.
+        this.eventHandler = mock(ApplicationEventHandler.class);
+        doAnswer(invocation -> {
+            CompletableApplicationEvent<?> event = invocation.getArgument(0);
+            Timer timer = invocation.getArgument(1);
+            return event.get(timer);
+        }).when(eventHandler).addAndGet(any(), any());
     }
 
     @AfterEach
@@ -177,7 +206,7 @@ public class PrototypeAsyncConsumerTest {
         try (MockedConstruction<OffsetFetchApplicationEvent> ignored = offsetFetchEventMocker(committedFuture)) {
             this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
             assertDoesNotThrow(() -> consumer.committed(offsets.keySet(), Duration.ofMillis(1000)));
-            verify(eventHandler).add(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class));
+            verify(eventHandler).addAndGet(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class), any(Timer.class));
         }
     }
 
@@ -190,7 +219,7 @@ public class PrototypeAsyncConsumerTest {
         try (MockedConstruction<OffsetFetchApplicationEvent> ignored = offsetFetchEventMocker(committedFuture)) {
             this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
             assertThrows(KafkaException.class, () -> consumer.committed(offsets.keySet(), Duration.ofMillis(1000)));
-            verify(eventHandler).add(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class));
+            verify(eventHandler).addAndGet(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class), any(Timer.class));
         }
     }
 
@@ -430,13 +459,13 @@ public class PrototypeAsyncConsumerTest {
 
             if (committedOffsetsEnabled) {
                 // Verify there was an OffsetFetch event and no ResetPositions event
-                verify(eventHandler).add(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class));
+                verify(eventHandler).addAndGet(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class), any(Timer.class));
                 verify(eventHandler,
                         never()).add(ArgumentMatchers.isA(ResetPositionsApplicationEvent.class));
             } else {
                 // Verify there was not any OffsetFetch event but there should be a ResetPositions
                 verify(eventHandler,
-                        never()).add(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class));
+                        never()).addAndGet(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class), any(Timer.class));
                 verify(eventHandler).add(ArgumentMatchers.isA(ResetPositionsApplicationEvent.class));
             }
         }
@@ -457,9 +486,172 @@ public class PrototypeAsyncConsumerTest {
             consumer.poll(Duration.ofMillis(0));
 
             verify(eventHandler).add(ArgumentMatchers.isA(ValidatePositionsApplicationEvent.class));
-            verify(eventHandler).add(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class));
+            verify(eventHandler).addAndGet(ArgumentMatchers.isA(OffsetFetchApplicationEvent.class), any(Timer.class));
             verify(eventHandler).add(ArgumentMatchers.isA(ResetPositionsApplicationEvent.class));
         }
+    }
+
+    @Test
+    public void testPollReturnsRecordsCollectedFromFetchBuffer() {
+        TopicPartition tp = new TopicPartition("topic", 0);
+        List<ConsumerRecord<String, String>> records = Collections.singletonList(
+                new ConsumerRecord<>("topic", 0, 0L, "key", "value"));
+        when(fetchCollector.collectFetch(fetchBuffer)).thenReturn(Fetch.forPartition(tp, records, true));
+        PrototypeAsyncConsumer<String, String> consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+        this.consumer = consumer;
+
+        ConsumerRecords<String, String> polled = consumer.poll(Duration.ofMillis(100));
+
+        assertEquals(1, polled.count());
+        assertEquals("value", polled.records(tp).get(0).value());
+        // The network thread is told that the consumer is polling
+        verify(eventHandler).add(ArgumentMatchers.isA(PollApplicationEvent.class));
+        // The records are not fetched by any request made on this thread
+        verify(eventHandler, never()).addAndGet(any(), any());
+    }
+
+    @Test
+    public void testPollAppliesInterceptors() {
+        TopicPartition tp = new TopicPartition("topic", 0);
+        List<ConsumerRecord<String, String>> records = Collections.singletonList(
+                new ConsumerRecord<>("topic", 0, 0L, "key", "value"));
+        when(fetchCollector.collectFetch(fetchBuffer)).thenReturn(Fetch.forPartition(tp, records, true));
+        interceptors = spy(interceptors);
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        consumer.poll(Duration.ofMillis(100));
+
+        verify(interceptors).onConsume(any());
+    }
+
+    @Test
+    public void testPollWakesUpNetworkThreadAndReturnsEmptyWhenNoRecordsAvailable() {
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        ConsumerRecords<?, ?> polled = consumer.poll(Duration.ZERO);
+
+        assertTrue(polled.isEmpty());
+        verify(eventHandler).wakeupNetworkThread();
+    }
+
+    @Test
+    public void testPollRethrowsErrorFromNetworkThread() {
+        backgroundEventQueue.add(new ErrorBackgroundEvent(new KafkaException("Network thread failure")));
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        KafkaException error = assertThrows(KafkaException.class, () -> consumer.poll(Duration.ZERO));
+
+        assertEquals("Network thread failure", error.getMessage());
+        assertTrue(backgroundEventQueue.isEmpty());
+    }
+
+    @Test
+    public void testPollWithoutSubscriptionOrAssignmentFails() {
+        when(subscriptions.hasNoSubscriptionOrUserAssignment()).thenReturn(true);
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        assertThrows(IllegalStateException.class, () -> consumer.poll(Duration.ZERO));
+    }
+
+    @Test
+    public void testPollAfterCloseFails() {
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+        consumer.close(Duration.ZERO);
+
+        assertThrows(IllegalStateException.class, () -> consumer.poll(Duration.ZERO));
+    }
+
+    @Test
+    public void testCloseClosesHandlerFetchBufferAndInterceptors() {
+        fetchBuffer = spy(fetchBuffer);
+        interceptors = spy(interceptors);
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+        Duration timeout = Duration.ofMillis(500);
+
+        consumer.close(timeout);
+
+        verify(eventHandler).close(timeout);
+        verify(fetchBuffer).close();
+        verify(interceptors).close();
+    }
+
+    @Test
+    public void testCloseIsIdempotent() {
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        consumer.close(Duration.ZERO);
+        consumer.close(Duration.ZERO);
+
+        verify(eventHandler, times(1)).close(any(Duration.class));
+    }
+
+    @Test
+    public void testCloseRethrowsFailureAsKafkaException() {
+        doThrow(new RuntimeException("Close failure")).when(eventHandler).close(any(Duration.class));
+        fetchBuffer = spy(fetchBuffer);
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        KafkaException error = assertThrows(KafkaException.class, () -> consumer.close(Duration.ZERO));
+
+        assertEquals("Close failure", error.getCause().getMessage());
+        // The failure doesn't prevent the rest of the resources from being closed
+        verify(fetchBuffer).close();
+    }
+
+    @Test
+    public void testCloseWithNegativeTimeoutFails() {
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        assertThrows(IllegalArgumentException.class, () -> consumer.close(Duration.ofMillis(-1)));
+    }
+
+    @Test
+    public void testSubscribeToPattern() {
+        this.subscriptions = new SubscriptionState(logContext, OffsetResetStrategy.EARLIEST);
+        when(metadata.fetch()).thenReturn(Cluster.empty());
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        consumer.subscribe(Pattern.compile("topic.*"));
+
+        assertTrue(subscriptions.hasPatternSubscription());
+        verify(metadata).requestUpdateForNewTopics();
+    }
+
+    @Test
+    public void testSubscribeToPatternWithListener() {
+        this.subscriptions = new SubscriptionState(logContext, OffsetResetStrategy.EARLIEST);
+        when(metadata.fetch()).thenReturn(Cluster.empty());
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+        MockRebalanceListener listener = new MockRebalanceListener();
+
+        consumer.subscribe(Pattern.compile("topic.*"), listener);
+
+        assertTrue(subscriptions.hasPatternSubscription());
+        assertSame(listener, subscriptions.rebalanceListener());
+    }
+
+    @Test
+    public void testSubscribeToInvalidPattern() {
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        assertThrows(IllegalArgumentException.class, () -> consumer.subscribe((Pattern) null));
+        assertThrows(IllegalArgumentException.class, () -> consumer.subscribe(Pattern.compile("")));
+    }
+
+    @Test
+    public void testSubscribeToPatternWithoutGroupId() {
+        this.groupId = null;
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        assertThrows(InvalidGroupIdException.class, () -> consumer.subscribe(Pattern.compile("topic.*")));
+    }
+
+    @Test
+    public void testSubscribeToPatternWithoutAssignors() {
+        this.assignors = Collections.emptyList();
+        this.consumer = newConsumer(time, new StringDeserializer(), new StringDeserializer());
+
+        assertThrows(IllegalStateException.class, () -> consumer.subscribe(Pattern.compile("topic.*")));
     }
 
     private void assertNoPendingWakeup(final WakeupTrigger wakeupTrigger) {
@@ -500,22 +692,33 @@ public class PrototypeAsyncConsumerTest {
         consumerProps.put(VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
     }
 
-    private PrototypeAsyncConsumer<?, ?> newConsumer(final Time time,
-                                                     final Deserializer<?> keyDeserializer,
-                                                     final Deserializer<?> valueDeserializer) {
+    private <K, V> PrototypeAsyncConsumer<K, V> newConsumer(final Time time,
+                                                            final Deserializer<K> keyDeserializer,
+                                                            final Deserializer<V> valueDeserializer) {
         consumerProps.put(KEY_DESERIALIZER_CLASS_CONFIG, keyDeserializer.getClass());
         consumerProps.put(VALUE_DESERIALIZER_CLASS_CONFIG, valueDeserializer.getClass());
 
+        @SuppressWarnings("unchecked")
+        FetchCollector<K, V> collector = (FetchCollector<K, V>) fetchCollector;
+        @SuppressWarnings("unchecked")
+        ConsumerInterceptors<K, V> consumerInterceptors = (ConsumerInterceptors<K, V>) interceptors;
+
         return new PrototypeAsyncConsumer<>(
-                time,
                 logContext,
-                config,
+                "client-id",
+                new Deserializers<>(keyDeserializer, valueDeserializer),
+                fetchBuffer,
+                collector,
+                consumerInterceptors,
+                time,
+                eventHandler,
+                backgroundEventQueue,
+                metrics,
                 subscriptions,
                 metadata,
-                eventHandler,
-                metrics,
-                Optional.ofNullable(this.groupId),
-                config.getInt(DEFAULT_API_TIMEOUT_MS_CONFIG));
+                100,
+                config.getInt(DEFAULT_API_TIMEOUT_MS_CONFIG),
+                assignors,
+                groupId);
     }
 }
-

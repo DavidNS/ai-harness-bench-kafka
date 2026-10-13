@@ -24,21 +24,27 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerGroupMetadata;
 import org.apache.kafka.clients.consumer.ConsumerInterceptor;
+import org.apache.kafka.clients.consumer.ConsumerPartitionAssignor;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.NoOffsetForPartitionException;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
+import org.apache.kafka.clients.consumer.internals.events.ApplicationEvent;
+import org.apache.kafka.clients.consumer.internals.events.ApplicationEventHandler;
+import org.apache.kafka.clients.consumer.internals.events.ApplicationEventProcessor;
 import org.apache.kafka.clients.consumer.internals.events.AssignmentChangeApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
+import org.apache.kafka.clients.consumer.internals.events.BackgroundEventProcessor;
 import org.apache.kafka.clients.consumer.internals.events.CommitApplicationEvent;
-import org.apache.kafka.clients.consumer.internals.events.EventHandler;
 import org.apache.kafka.clients.consumer.internals.events.ListOffsetsApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.NewTopicsMetadataUpdateRequestEvent;
 import org.apache.kafka.clients.consumer.internals.events.OffsetFetchApplicationEvent;
+import org.apache.kafka.clients.consumer.internals.events.PollApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.ResetPositionsApplicationEvent;
 import org.apache.kafka.clients.consumer.internals.events.ValidatePositionsApplicationEvent;
+import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
@@ -51,6 +57,7 @@ import org.apache.kafka.common.errors.InvalidGroupIdException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.internals.ClusterResourceListeners;
 import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.utils.AppInfoParser;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.utils.LogContext;
@@ -67,23 +74,29 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
+import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_JMX_PREFIX;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.configuredConsumerInterceptors;
+import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createFetchMetricsManager;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createLogContext;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createMetrics;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createSubscriptionState;
@@ -93,137 +106,259 @@ import static org.apache.kafka.common.utils.Utils.join;
 import static org.apache.kafka.common.utils.Utils.propsToMap;
 
 /**
- * This prototype consumer uses the EventHandler to process application
- * events so that the network IO can be processed in a background thread. Visit
+ * This {@link Consumer} implementation uses an {@link ApplicationEventHandler event handler} to process
+ * {@link ApplicationEvent application events} so that the network I/O can be processed in a dedicated
+ * {@link ConsumerNetworkThread network thread}. Visit
  * <a href="https://cwiki.apache.org/confluence/display/KAFKA/Proposal%3A+Consumer+Threading+Model+Refactor" >this document</a>
  * for detail implementation.
+ *
+ * <p/>
+ *
+ * The fetch requests are sent by the network thread, which places the responses in a {@link FetchBuffer} shared with
+ * the application thread. The decompression and deserialization of the records is performed on the application
+ * thread, by the {@link FetchCollector}, when {@link #poll(Duration)} collects the fetch from the buffer.
  */
 public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
+
     static final long DEFAULT_CLOSE_TIMEOUT_MS = 30 * 1000;
 
-    private final LogContext logContext;
-    private final EventHandler eventHandler;
+    private final ApplicationEventHandler applicationEventHandler;
     private final Time time;
     private final Optional<String> groupId;
+    private final String clientId;
     private final Logger log;
-    private final Deserializers<K, V> deserializers;
     private final SubscriptionState subscriptions;
     private final ConsumerMetadata metadata;
     private final Metrics metrics;
+    private final long retryBackoffMs;
     private final long defaultApiTimeoutMs;
+    private final List<ConsumerPartitionAssignor> assignors;
+    private final Deserializers<K, V> deserializers;
+    private final FetchBuffer fetchBuffer;
+    private final FetchCollector<K, V> fetchCollector;
+    private final ConsumerInterceptors<K, V> interceptors;
+    private final BlockingQueue<BackgroundEvent> backgroundEventQueue;
+    private final BackgroundEventProcessor backgroundEventProcessor;
+    private final WakeupTrigger wakeupTrigger = new WakeupTrigger();
 
-    private WakeupTrigger wakeupTrigger = new WakeupTrigger();
-    public PrototypeAsyncConsumer(Properties properties,
-                         Deserializer<K> keyDeserializer,
-                         Deserializer<V> valueDeserializer) {
-        this(propsToMap(properties), keyDeserializer, valueDeserializer);
-    }
+    private volatile boolean closed = false;
 
-    public PrototypeAsyncConsumer(final Map<String, Object> configs,
-                                  final Deserializer<K> keyDeser,
-                                  final Deserializer<V> valDeser) {
-        this(new ConsumerConfig(appendDeserializerToConfig(configs, keyDeser, valDeser)), keyDeser, valDeser);
-    }
-
-    public PrototypeAsyncConsumer(final ConsumerConfig config,
+    public PrototypeAsyncConsumer(final Properties properties,
                                   final Deserializer<K> keyDeserializer,
                                   final Deserializer<V> valueDeserializer) {
-        this.time = Time.SYSTEM;
-        GroupRebalanceConfig groupRebalanceConfig = new GroupRebalanceConfig(config,
+        this(Time.SYSTEM,
+                new ConsumerConfig(appendDeserializerToConfig(propsToMap(properties), keyDeserializer, valueDeserializer)),
+                keyDeserializer,
+                valueDeserializer);
+    }
+
+    public PrototypeAsyncConsumer(final Time time,
+                                  final ConsumerConfig config,
+                                  final Deserializer<K> keyDeserializer,
+                                  final Deserializer<V> valueDeserializer) {
+        this.time = time;
+        final GroupRebalanceConfig groupRebalanceConfig = new GroupRebalanceConfig(config,
                 GroupRebalanceConfig.ProtocolType.CONSUMER);
         this.groupId = Optional.ofNullable(groupRebalanceConfig.groupId);
-        this.defaultApiTimeoutMs = config.getInt(ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG);
-        this.logContext = createLogContext(config, groupRebalanceConfig);
+        this.clientId = config.getString(CommonClientConfigs.CLIENT_ID_CONFIG);
+        final LogContext logContext = createLogContext(config, groupRebalanceConfig);
         this.log = logContext.logger(getClass());
-        this.deserializers = new Deserializers<>(config, keyDeserializer, valueDeserializer);
-        this.subscriptions = createSubscriptionState(config, logContext);
-        this.metrics = createMetrics(config, time);
-        List<ConsumerInterceptor<K, V>> interceptorList = configuredConsumerInterceptors(config);
-        ClusterResourceListeners clusterResourceListeners = ClientUtils.configureClusterResourceListeners(
-                metrics.reporters(),
-                interceptorList,
-                Arrays.asList(deserializers.keyDeserializer, deserializers.valueDeserializer));
-        this.metadata = new ConsumerMetadata(config, subscriptions, logContext, clusterResourceListeners);
-        final List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(config);
-        metadata.bootstrap(addresses);
-        this.eventHandler = new DefaultEventHandler(
-                config,
-                groupRebalanceConfig,
-                logContext,
-                subscriptions,
-                new ApiVersions(),
-                this.metrics,
-                clusterResourceListeners,
-                null // this is coming from the fetcher, but we don't have one
-        );
+
+        try {
+            log.debug("Initializing the Kafka consumer");
+            this.defaultApiTimeoutMs = config.getInt(ConsumerConfig.DEFAULT_API_TIMEOUT_MS_CONFIG);
+            this.metrics = createMetrics(config, time);
+            this.retryBackoffMs = config.getLong(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG);
+
+            final List<ConsumerInterceptor<K, V>> interceptorList = configuredConsumerInterceptors(config);
+            this.interceptors = new ConsumerInterceptors<>(interceptorList);
+            this.deserializers = new Deserializers<>(config, keyDeserializer, valueDeserializer);
+            this.subscriptions = createSubscriptionState(config, logContext);
+            final ClusterResourceListeners clusterResourceListeners = ClientUtils.configureClusterResourceListeners(
+                    metrics.reporters(),
+                    interceptorList,
+                    Arrays.asList(deserializers.keyDeserializer, deserializers.valueDeserializer));
+            this.metadata = new ConsumerMetadata(config, subscriptions, logContext, clusterResourceListeners);
+            final List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(config);
+            this.metadata.bootstrap(addresses);
+
+            final FetchMetricsManager fetchMetricsManager = createFetchMetricsManager(metrics);
+            final FetchConfig fetchConfig = new FetchConfig(config);
+            final ApiVersions apiVersions = new ApiVersions();
+            final BlockingQueue<ApplicationEvent> applicationEventQueue = new LinkedBlockingQueue<>();
+            this.backgroundEventQueue = new LinkedBlockingQueue<>();
+            this.backgroundEventProcessor = new BackgroundEventProcessor(logContext, backgroundEventQueue);
+
+            // This FetchBuffer is shared between the application and network threads.
+            this.fetchBuffer = new FetchBuffer(logContext);
+
+            // None of these objects are instantiated here: they belong to the network thread, which creates them
+            // (once) when it starts, so the application thread never holds a reference to them.
+            final Supplier<NetworkClientDelegate> networkClientDelegateSupplier = NetworkClientDelegate.supplier(time,
+                    logContext,
+                    metadata,
+                    config,
+                    apiVersions,
+                    metrics,
+                    fetchMetricsManager,
+                    fetchMetricsManager.throttleTimeSensor());
+            final Supplier<RequestManagers> requestManagersSupplier = RequestManagers.supplier(time,
+                    logContext,
+                    backgroundEventQueue,
+                    metadata,
+                    subscriptions,
+                    fetchBuffer,
+                    config,
+                    groupRebalanceConfig,
+                    apiVersions,
+                    fetchMetricsManager,
+                    networkClientDelegateSupplier);
+            final Supplier<ApplicationEventProcessor> applicationEventProcessorSupplier = ApplicationEventProcessor.supplier(logContext,
+                    metadata,
+                    applicationEventQueue,
+                    requestManagersSupplier);
+            this.applicationEventHandler = new ApplicationEventHandler(logContext,
+                    time,
+                    applicationEventQueue,
+                    applicationEventProcessorSupplier,
+                    networkClientDelegateSupplier,
+                    requestManagersSupplier);
+
+            this.fetchCollector = new FetchCollector<>(logContext,
+                    metadata,
+                    subscriptions,
+                    fetchConfig,
+                    deserializers,
+                    fetchMetricsManager,
+                    time);
+            this.assignors = ConsumerPartitionAssignor.getAssignorInstances(
+                    config.getList(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG),
+                    config.originals(Collections.singletonMap(ConsumerConfig.CLIENT_ID_CONFIG, clientId))
+            );
+
+            // no coordinator will be constructed for the default (null) group id
+            config.logUnused();
+            AppInfoParser.registerAppInfo(CONSUMER_JMX_PREFIX, clientId, metrics, time.milliseconds());
+            log.debug("Kafka consumer initialized");
+        } catch (Throwable t) {
+            // call close methods if internal objects are already constructed; this is to prevent resource leak. see KAFKA-2121
+            // we do not need to call `close` at all when `log` is null, which means no internal objects were initialized.
+            if (this.log != null) {
+                close(Duration.ZERO, true);
+            }
+            // now propagate the exception
+            throw new KafkaException("Failed to construct kafka consumer", t);
+        }
     }
 
     // Visible for testing
-    PrototypeAsyncConsumer(Time time,
-                           LogContext logContext,
-                           ConsumerConfig config,
-                           SubscriptionState subscriptions,
-                           ConsumerMetadata metadata,
-                           EventHandler eventHandler,
-                           Metrics metrics,
-                           Optional<String> groupId,
-                           int defaultApiTimeoutMs) {
-        this.time = time;
-        this.logContext = logContext;
+    PrototypeAsyncConsumer(final LogContext logContext,
+                           final String clientId,
+                           final Deserializers<K, V> deserializers,
+                           final FetchBuffer fetchBuffer,
+                           final FetchCollector<K, V> fetchCollector,
+                           final ConsumerInterceptors<K, V> interceptors,
+                           final Time time,
+                           final ApplicationEventHandler applicationEventHandler,
+                           final BlockingQueue<BackgroundEvent> backgroundEventQueue,
+                           final Metrics metrics,
+                           final SubscriptionState subscriptions,
+                           final ConsumerMetadata metadata,
+                           final long retryBackoffMs,
+                           final int defaultApiTimeoutMs,
+                           final List<ConsumerPartitionAssignor> assignors,
+                           final String groupId) {
         this.log = logContext.logger(getClass());
         this.subscriptions = subscriptions;
-        this.metadata = metadata;
+        this.clientId = clientId;
+        this.fetchBuffer = fetchBuffer;
+        this.fetchCollector = fetchCollector;
+        this.interceptors = Objects.requireNonNull(interceptors);
+        this.time = time;
+        this.backgroundEventQueue = backgroundEventQueue;
+        this.backgroundEventProcessor = new BackgroundEventProcessor(logContext, backgroundEventQueue);
         this.metrics = metrics;
-        this.groupId = groupId;
+        this.groupId = Optional.ofNullable(groupId);
+        this.metadata = metadata;
+        this.retryBackoffMs = retryBackoffMs;
         this.defaultApiTimeoutMs = defaultApiTimeoutMs;
-        this.deserializers = new Deserializers<>(config);
-        this.eventHandler = eventHandler;
+        this.deserializers = deserializers;
+        this.applicationEventHandler = applicationEventHandler;
+        this.assignors = assignors;
     }
 
     /**
-     * poll implementation using {@link EventHandler}.
-     *  1. Poll for background events. If there's a fetch response event, process the record and return it. If it is
-     *  another type of event, process it.
-     *  2. Send fetches if needed.
-     *  If the timeout expires, return an empty ConsumerRecord.
+     * poll implementation using {@link ApplicationEventHandler}.
+     * <ol>
+     *     <li>Let the network thread know that the consumer is still polling, and process the events that the network
+     *     thread produced for the application thread; errors are rethrown here.</li>
+     *     <li>Update the fetch positions, if needed.</li>
+     *     <li>Collect the records that the network thread placed in the {@link FetchBuffer}, waiting for them to
+     *     arrive until the timeout expires. The records are decompressed and deserialized on this thread.</li>
+     * </ol>
+     * If the timeout expires, an empty {@link ConsumerRecords} is returned.
      *
      * @param timeout timeout of the poll loop
      * @return ConsumerRecord.  It can be empty if time timeout expires.
      */
     @Override
     public ConsumerRecords<K, V> poll(final Duration timeout) {
-        Timer timer = time.timer(timeout);
-        try {
-            do {
-                if (!eventHandler.isEmpty()) {
-                    final Optional<BackgroundEvent> backgroundEvent = eventHandler.poll();
-                    // processEvent() may process 3 types of event:
-                    // 1. Errors
-                    // 2. Callback Invocation
-                    // 3. Fetch responses
-                    // Errors will be handled or rethrown.
-                    // Callback invocation will trigger callback function execution, which is blocking until completion.
-                    // Successful fetch responses will be added to the completedFetches in the fetcher, which will then
-                    // be processed in the collectFetches().
-                    backgroundEvent.ifPresent(event -> processEvent(event, timeout));
+        maybeThrowIfClosed();
+        final Timer timer = time.timer(timeout);
+
+        if (subscriptions.hasNoSubscriptionOrUserAssignment())
+            throw new IllegalStateException("Consumer is not subscribed to any topics or assigned any partitions");
+
+        do {
+            // Make sure to let the background thread know that we are still polling.
+            applicationEventHandler.add(new PollApplicationEvent(timer.currentTimeMs()));
+
+            // Errors that occurred in the network thread are rethrown here.
+            backgroundEventProcessor.process();
+
+            final Fetch<K, V> fetch = pollForFetches(timer);
+
+            if (!fetch.isEmpty()) {
+                if (fetch.records().isEmpty()) {
+                    log.trace("Returning empty records from `poll()` "
+                            + "since the consumer's position has advanced for at least one topic partition");
                 }
 
-                updateFetchPositionsIfNeeded(timer);
-
-                // The idea here is to have the background thread sending fetches autonomously, and the fetcher
-                // uses the poll loop to retrieve successful fetchResponse and process them on the polling thread.
-                final Fetch<K, V> fetch = collectFetches();
-                if (!fetch.isEmpty()) {
-                    return processFetchResults(fetch);
-                }
-                // We will wait for retryBackoffMs
-            } while (time.timer(timeout).notExpired());
-        } catch (final Exception e) {
-            throw new RuntimeException(e);
-        }
-        // TODO: Once we implement poll(), clear wakeupTrigger in a finally block: wakeupTrigger.clearActiveTask();
+                return interceptors.onConsume(new ConsumerRecords<>(fetch.records()));
+            }
+            // We will wait for retryBackoffMs
+        } while (timer.notExpired());
 
         return ConsumerRecords.empty();
+    }
+
+    /**
+     * Collects the fetch from the {@link FetchBuffer}. If there is nothing available yet, the network thread is
+     * awakened so that it sends new fetches and the buffer is awaited until data arrives or the timer expires.
+     */
+    private Fetch<K, V> pollForFetches(final Timer timer) {
+        long pollTimeout = timer.remainingMs();
+
+        // if data is available already, return it immediately
+        final Fetch<K, V> fetch = fetchCollector.collectFetch(fetchBuffer);
+
+        if (!fetch.isEmpty())
+            return fetch;
+
+        // If the positions are not all known yet, the lookup (e.g. the committed offsets) may be backing off after a
+        // failure, so do not block for longer than the retry backoff.
+        if (!updateFetchPositionsIfNeeded(timer))
+            pollTimeout = Math.min(pollTimeout, retryBackoffMs);
+
+        // Make sure the network thread sends new fetches (it never re-sends the pending ones).
+        applicationEventHandler.wakeupNetworkThread();
+
+        log.trace("Polling for fetches with timeout {}", pollTimeout);
+
+        // Attempt to fetch any data. This will wait until the new data arrives or the timeout expires.
+        fetchBuffer.awaitNotEmpty(time.timer(pollTimeout));
+
+        return fetchCollector.collectFetch(fetchBuffer);
     }
 
     /**
@@ -236,11 +371,16 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
      *                                                                defined
      */
     private boolean updateFetchPositionsIfNeeded(final Timer timer) {
+        if (subscriptions.hasAllFetchPositions())
+            return true;
+
         // Validate positions using the partition leader end offsets, to detect if any partition
         // has been truncated due to a leader change. This will trigger an OffsetForLeaderEpoch
         // request, retrieve the partition end offsets, and validate the current position against it.
-        ValidatePositionsApplicationEvent validatePositionsEvent = new ValidatePositionsApplicationEvent();
-        eventHandler.add(validatePositionsEvent);
+        applicationEventHandler.add(new ValidatePositionsApplicationEvent());
+
+        if (subscriptions.hasAllFetchPositions())
+            return true;
 
         // Reset positions using committed offsets retrieved from the group coordinator, for any
         // partitions which do not have a valid position and are not awaiting reset. This will
@@ -260,8 +400,7 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
         // which are awaiting reset. This will trigger a ListOffset request, retrieve the
         // partition offsets according to the strategy (ex. earliest, latest), and update the
         // positions.
-        ResetPositionsApplicationEvent resetPositionsEvent = new ResetPositionsApplicationEvent();
-        eventHandler.add(resetPositionsEvent);
+        applicationEventHandler.add(new ResetPositionsApplicationEvent());
         return true;
     }
 
@@ -274,22 +413,8 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
         commitSync(Duration.ofMillis(defaultApiTimeoutMs));
     }
 
-    private void processEvent(final BackgroundEvent backgroundEvent, final Duration timeout) {
-        // stubbed class
-    }
-
-    private ConsumerRecords<K, V> processFetchResults(final Fetch<K, V> fetch) {
-        // stubbed class
-        return ConsumerRecords.empty();
-    }
-
-    private Fetch<K, V> collectFetches() {
-        // stubbed class
-        return Fetch.empty();
-    }
-
     /**
-     * This method sends a commit event to the EventHandler and return.
+     * This method sends a commit event to the ApplicationEventHandler and return.
      */
     @Override
     public void commitAsync() {
@@ -324,7 +449,7 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
             // the task can only be woken up if the top level API call is commitSync
             wakeupTrigger.setActiveTask(commitEvent.future());
         }
-        eventHandler.add(commitEvent);
+        applicationEventHandler.add(commitEvent);
         return commitEvent.future();
     }
 
@@ -386,7 +511,7 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
         final OffsetFetchApplicationEvent event = new OffsetFetchApplicationEvent(partitions);
         wakeupTrigger.setActiveTask(event.future());
         try {
-            return eventHandler.addAndGet(event, time.timer(timeout));
+            return applicationEventHandler.addAndGet(event, time.timer(timeout));
         } finally {
             wakeupTrigger.clearActiveTask();
         }
@@ -469,7 +594,7 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
         if (timeout.toMillis() == 0L)
             return listOffsetsEvent.emptyResult();
 
-        return eventHandler.addAndGet(listOffsetsEvent, time.timer(timeout));
+        return applicationEventHandler.addAndGet(listOffsetsEvent, time.timer(timeout));
     }
 
     @Override
@@ -508,7 +633,7 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
                 timestampToSearch,
                 false);
         Map<TopicPartition, OffsetAndTimestamp> offsetAndTimestampMap =
-                eventHandler.addAndGet(listOffsetsEvent, time.timer(timeout));
+                applicationEventHandler.addAndGet(listOffsetsEvent, time.timer(timeout));
         return offsetAndTimestampMap.entrySet().stream().collect(Collectors.toMap(e -> e.getKey(),
                 e -> e.getValue().offset()));
     }
@@ -540,16 +665,55 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
 
     @Override
     public void close(Duration timeout) {
-        AtomicReference<Throwable> firstException = new AtomicReference<>();
-        closeQuietly(this.eventHandler, "event handler", firstException);
+        if (timeout.toMillis() < 0)
+            throw new IllegalArgumentException("The timeout cannot be negative.");
+
+        if (!closed) {
+            // need to close before setting the flag since the close function itself may need the consumer to be open
+            try {
+                close(timeout, false);
+            } finally {
+                closed = true;
+            }
+        }
+    }
+
+    private void close(Duration timeout, boolean swallowException) {
+        log.trace("Closing the Kafka consumer");
+        final AtomicReference<Throwable> firstException = new AtomicReference<>();
+
+        if (applicationEventHandler != null) {
+            try {
+                applicationEventHandler.close(timeout);
+            } catch (Throwable t) {
+                firstException.compareAndSet(null, t);
+                log.error("Failed to close the application event handler", t);
+            }
+        }
+
+        closeQuietly(backgroundEventProcessor, "background event processor", firstException);
+        closeQuietly(fetchBuffer, "fetch buffer", firstException);
+        closeQuietly(interceptors, "consumer interceptors", firstException);
+        closeQuietly(metrics, "consumer metrics", firstException);
+        closeQuietly(deserializers, "consumer deserializers", firstException);
+
+        if (clientId != null && metrics != null)
+            AppInfoParser.unregisterAppInfo(CONSUMER_JMX_PREFIX, clientId, metrics);
+
         log.debug("Kafka consumer has been closed");
         Throwable exception = firstException.get();
-        if (exception != null) {
-            if (exception instanceof InterruptException) {
+
+        if (exception != null && !swallowException) {
+            if (exception instanceof InterruptException)
                 throw (InterruptException) exception;
-            }
+
             throw new KafkaException("Failed to close kafka consumer", exception);
         }
+    }
+
+    private void maybeThrowIfClosed() {
+        if (closed)
+            throw new IllegalStateException("This consumer has already been closed.");
     }
 
     @Override
@@ -558,7 +722,7 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
     }
 
     /**
-     * This method sends a commit event to the EventHandler and waits for
+     * This method sends a commit event to the ApplicationEventHandler and waits for
      * the event to finish.
      *
      * @param timeout max wait time for the blocking operation.
@@ -639,27 +803,55 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
                 throw new IllegalArgumentException("Topic partitions to assign to cannot have null or empty topic");
         }
 
-        // TODO: implementation of refactored Fetcher will be included in forthcoming commits.
-        // fetcher.clearBufferedDataForUnassignedPartitions(partitions);
+        fetchBuffer.retainAll(new HashSet<>(partitions));
 
         // assignment change event will trigger autocommit if it is configured and the group id is specified. This is
         // to make sure offsets of topic partitions the consumer is unsubscribing from are committed since there will
         // be no following rebalance
-        eventHandler.add(new AssignmentChangeApplicationEvent(this.subscriptions.allConsumed(), time.milliseconds()));
+        applicationEventHandler.add(new AssignmentChangeApplicationEvent(this.subscriptions.allConsumed(), time.milliseconds()));
 
         log.info("Assigned to partition(s): {}", join(partitions, ", "));
         if (this.subscriptions.assignFromUser(new HashSet<>(partitions)))
-            eventHandler.add(new NewTopicsMetadataUpdateRequestEvent());
+            applicationEventHandler.add(new NewTopicsMetadataUpdateRequestEvent());
     }
 
     @Override
-    public void subscribe(Pattern pattern, ConsumerRebalanceListener callback) {
-        throw new KafkaException("method not implemented");
+    public void subscribe(Pattern pattern, ConsumerRebalanceListener listener) {
+        maybeThrowInvalidGroupIdException();
+
+        if (pattern == null || pattern.toString().isEmpty())
+            throw new IllegalArgumentException("Topic pattern to subscribe to cannot be " + (pattern == null ?
+                    "null" : "empty"));
+
+        throwIfNoAssignorsConfigured();
+        log.info("Subscribed to pattern: '{}'", pattern);
+        subscriptions.subscribe(pattern, listener);
+        updatePatternSubscription(metadata.fetch());
+        metadata.requestUpdateForNewTopics();
     }
 
     @Override
     public void subscribe(Pattern pattern) {
-        throw new KafkaException("method not implemented");
+        subscribe(pattern, new NoOpConsumerRebalanceListener());
+    }
+
+    /**
+     * Subscribes to the topics of the cluster that match the subscribed pattern. This mirrors what the classic
+     * consumer's coordinator does when the metadata changes.
+     */
+    private void updatePatternSubscription(Cluster cluster) {
+        final Set<String> topicsToSubscribe = cluster.topics().stream()
+                .filter(subscriptions::matchesSubscribedPattern)
+                .collect(Collectors.toSet());
+
+        if (subscriptions.subscribeFromPattern(topicsToSubscribe))
+            metadata.requestUpdateForNewTopics();
+    }
+
+    private void throwIfNoAssignorsConfigured() {
+        if (assignors == null || assignors.isEmpty())
+            throw new IllegalStateException("Must configure at least one partition assigner class name to " +
+                    ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG + " configuration property");
     }
 
     @Override
@@ -676,19 +868,6 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
     // Visible for testing
     WakeupTrigger wakeupTrigger() {
         return wakeupTrigger;
-    }
-
-    private static <K, V> ClusterResourceListeners configureClusterResourceListeners(
-            final Deserializer<K> keyDeserializer,
-            final Deserializer<V> valueDeserializer,
-            final List<?>... candidateLists) {
-        ClusterResourceListeners clusterResourceListeners = new ClusterResourceListeners();
-        for (List<?> candidateList: candidateLists)
-            clusterResourceListeners.maybeAddAll(candidateList);
-
-        clusterResourceListeners.maybeAdd(keyDeserializer);
-        clusterResourceListeners.maybeAdd(valueDeserializer);
-        return clusterResourceListeners;
     }
 
     /**
@@ -711,14 +890,14 @@ public class PrototypeAsyncConsumer<K, V> implements Consumer<K, V> {
 
         log.debug("Refreshing committed offsets for partitions {}", initializingPartitions);
         try {
-            final Map<TopicPartition, OffsetAndMetadata> offsets = eventHandler.addAndGet(new OffsetFetchApplicationEvent(initializingPartitions), timer);
-            return ConsumerUtils.refreshCommittedOffsets(offsets, this.metadata, this.subscriptions);
+            final Map<TopicPartition, OffsetAndMetadata> offsets = applicationEventHandler.addAndGet(new OffsetFetchApplicationEvent(initializingPartitions), timer);
+            ConsumerUtils.refreshCommittedOffsets(offsets, metadata, subscriptions);
+            return true;
         } catch (org.apache.kafka.common.errors.TimeoutException e) {
             log.error("Couldn't refresh committed offsets before timeout expired");
             return false;
         }
     }
-
 
     // This is here temporary as we don't have public access to the ConsumerConfig in this module.
     public static Map<String, Object> appendDeserializerToConfig(Map<String, Object> configs,

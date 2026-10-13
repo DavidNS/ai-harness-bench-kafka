@@ -18,6 +18,8 @@ package org.apache.kafka.clients.consumer.internals;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.internals.events.BackgroundEventHandler;
+import org.apache.kafka.clients.consumer.internals.events.ErrorBackgroundEvent;
 import org.apache.kafka.common.errors.GroupAuthorizationException;
 import org.apache.kafka.common.errors.RetriableException;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatRequestData;
@@ -88,9 +90,9 @@ public class HeartbeatRequestManager implements RequestManager {
     private final MembershipManager membershipManager;
 
     /**
-     * ErrorEventHandler allows the background thread to propagate errors back to the user
+     * BackgroundEventHandler allows the background thread to propagate errors back to the user
      */
-    private final ErrorEventHandler nonRetriableErrorHandler;
+    private final BackgroundEventHandler nonRetriableErrorHandler;
 
     public HeartbeatRequestManager(
         final Time time,
@@ -99,7 +101,7 @@ public class HeartbeatRequestManager implements RequestManager {
         final CoordinatorRequestManager coordinatorRequestManager,
         final SubscriptionState subscriptions,
         final MembershipManager membershipManager,
-        final ErrorEventHandler nonRetriableErrorHandler) {
+        final BackgroundEventHandler nonRetriableErrorHandler) {
         this.coordinatorRequestManager = coordinatorRequestManager;
         this.time = time;
         this.logger = logContext.logger(getClass());
@@ -122,7 +124,7 @@ public class HeartbeatRequestManager implements RequestManager {
         final SubscriptionState subscriptions,
         final MembershipManager membershipManager,
         final HeartbeatRequestState heartbeatRequestState,
-        final ErrorEventHandler nonRetriableErrorHandler) {
+        final BackgroundEventHandler nonRetriableErrorHandler) {
         this.logger = logContext.logger(this.getClass());
         this.time = time;
         this.subscriptions = subscriptions;
@@ -307,7 +309,7 @@ public class HeartbeatRequestManager implements RequestManager {
     }
 
     private void handleFatalFailure(Throwable error) {
-        nonRetriableErrorHandler.handle(error);
+        nonRetriableErrorHandler.add(new ErrorBackgroundEvent(error));
         membershipManager.transitionToFailed();
     }
 

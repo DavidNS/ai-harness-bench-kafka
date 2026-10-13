@@ -16,19 +16,29 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
-import org.apache.kafka.clients.consumer.internals.events.ErrorBackgroundEvent;
+import java.util.function.Supplier;
 
-import java.util.Queue;
+/**
+ * Represents a {@link Supplier} that is lazily created on first use and then cached: {@link #create()} is invoked at
+ * most once, by the first caller of {@link #get()}. This is used for objects that are owned by a thread other than the
+ * one constructing the consumer, so the application thread never holds a reference to them.
+ *
+ * <p/>
+ *
+ * Note: this class is intentionally not thread-safe; {@link #get()} is expected to be invoked from the thread that
+ * owns the supplied object.
+ */
+public abstract class CachedSupplier<T> implements Supplier<T> {
 
-public class ErrorEventHandler {
-    private final Queue<BackgroundEvent> backgroundEventQueue;
+    private T result;
 
-    public ErrorEventHandler(Queue<BackgroundEvent> backgroundEventQueue) {
-        this.backgroundEventQueue = backgroundEventQueue;
-    }
+    protected abstract T create();
 
-    public void handle(Throwable e) {
-        backgroundEventQueue.add(new ErrorBackgroundEvent(e));
+    @Override
+    public T get() {
+        if (result == null)
+            result = create();
+
+        return result;
     }
 }

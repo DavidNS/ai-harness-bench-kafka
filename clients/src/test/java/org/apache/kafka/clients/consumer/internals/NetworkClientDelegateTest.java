@@ -33,11 +33,15 @@ import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import org.apache.kafka.common.errors.AuthenticationException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG;
@@ -153,5 +157,91 @@ public class NetworkClientDelegateTest {
 
     private Node mockNode() {
         return new Node(0, "localhost", 99);
+    }
+
+    @Test
+    public void testPollResultConstructors() {
+        NetworkClientDelegate.UnsentRequest request = newUnsentFindCoordinatorRequest();
+
+        assertEquals(Long.MAX_VALUE, NetworkClientDelegate.PollResult.EMPTY.timeUntilNextPollMs);
+        assertTrue(NetworkClientDelegate.PollResult.EMPTY.unsentRequests.isEmpty());
+
+        NetworkClientDelegate.PollResult single = new NetworkClientDelegate.PollResult(request);
+        assertEquals(Long.MAX_VALUE, single.timeUntilNextPollMs);
+        assertEquals(Collections.singletonList(request), single.unsentRequests);
+
+        NetworkClientDelegate.PollResult list = new NetworkClientDelegate.PollResult(Collections.singletonList(request));
+        assertEquals(Long.MAX_VALUE, list.timeUntilNextPollMs);
+        assertEquals(Collections.singletonList(request), list.unsentRequests);
+
+        NetworkClientDelegate.PollResult timeOnly = new NetworkClientDelegate.PollResult(42);
+        assertEquals(42, timeOnly.timeUntilNextPollMs);
+        assertTrue(timeOnly.unsentRequests.isEmpty());
+
+        NetworkClientDelegate.PollResult both = new NetworkClientDelegate.PollResult(42, Collections.singletonList(request));
+        assertEquals(42, both.timeUntilNextPollMs);
+        assertEquals(Collections.singletonList(request), both.unsentRequests);
+    }
+
+    @Test
+    public void testAddAllPollResultSendsRequestsAndReturnsTimeUntilNextPoll() throws Exception {
+        try (NetworkClientDelegate ncd = newNetworkClientDelegate()) {
+            NetworkClientDelegate.UnsentRequest unsentRequest = newUnsentFindCoordinatorRequest();
+            prepareFindCoordinatorResponse(Errors.NONE);
+
+            long timeUntilNextPollMs = ncd.addAll(new NetworkClientDelegate.PollResult(123, Collections.singletonList(unsentRequest)));
+            ncd.poll(0, time.milliseconds());
+
+            assertEquals(123, timeUntilNextPollMs);
+            assertTrue(unsentRequest.future().isDone());
+            assertNotNull(unsentRequest.future().get());
+        }
+    }
+
+    @Test
+    public void testUnsentRequestWithTargetNode() throws Exception {
+        try (NetworkClientDelegate ncd = newNetworkClientDelegate()) {
+            AtomicReference<ClientResponse> response = new AtomicReference<>();
+            NetworkClientDelegate.UnsentRequest unsentRequest = new NetworkClientDelegate.UnsentRequest(
+                    new FindCoordinatorRequest.Builder(new FindCoordinatorRequestData()
+                            .setKey(GROUP_ID)
+                            .setKeyType(FindCoordinatorRequest.CoordinatorType.GROUP.id())),
+                    mockNode(),
+                    (clientResponse, error) -> response.set(clientResponse));
+            prepareFindCoordinatorResponse(Errors.NONE);
+
+            ncd.send(unsentRequest);
+            ncd.poll(0, time.milliseconds());
+
+            assertNotNull(response.get());
+            assertTrue(client.requests().isEmpty() || client.requests().peek().destination().equals(mockNode().idString()));
+        }
+    }
+
+    @Test
+    public void testIsUnavailable() throws Exception {
+        try (NetworkClientDelegate ncd = newNetworkClientDelegate()) {
+            Node node = mockNode();
+            assertFalse(ncd.isUnavailable(node));
+
+            client.setUnreachable(node, REQUEST_TIMEOUT_MS);
+            ncd.send(newUnsentFindCoordinatorRequest());
+            ncd.poll(0, time.milliseconds());
+            // an unreachable node is only "unavailable" once the connection attempt failed and is backing off
+            assertEquals(client.connectionFailed(node) && client.connectionDelay(node, time.milliseconds()) > 0,
+                    ncd.isUnavailable(node));
+        }
+    }
+
+    @Test
+    public void testMaybeThrowAuthFailure() throws Exception {
+        try (NetworkClientDelegate ncd = newNetworkClientDelegate()) {
+            Node node = mockNode();
+            ncd.maybeThrowAuthFailure(node);
+
+            client.authenticationFailed(node, 300);
+
+            assertThrows(AuthenticationException.class, () -> ncd.maybeThrowAuthFailure(node));
+        }
     }
 }

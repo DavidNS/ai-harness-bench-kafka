@@ -191,4 +191,53 @@ public class FetchBufferTest {
     private static Set<TopicPartition> partitions(TopicPartition... partitions) {
         return new HashSet<>(Arrays.asList(partitions));
     }
+
+    @Test
+    public void testAwaitNotEmptyReturnsImmediatelyWhenDataIsAvailable() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            fetchBuffer.add(completedFetch(topicAPartition0));
+
+            assertTrue(fetchBuffer.awaitNotEmpty(time.timer(1000)));
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyReturnsFalseWhenTimerExpires() {
+        MockTime mockTime = new MockTime(0, 0, 0);
+
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            assertFalse(fetchBuffer.awaitNotEmpty(mockTime.timer(0)));
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyWakesUpWhenDataIsAddedByAnotherThread() throws Exception {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            java.util.concurrent.atomic.AtomicBoolean result = new java.util.concurrent.atomic.AtomicBoolean();
+            java.util.concurrent.CountDownLatch waiting = new java.util.concurrent.CountDownLatch(1);
+            Thread waiter = new Thread(() -> {
+                waiting.countDown();
+                result.set(fetchBuffer.awaitNotEmpty(Time.SYSTEM.timer(30000)));
+            });
+            waiter.start();
+            assertTrue(waiting.await(5, java.util.concurrent.TimeUnit.SECONDS));
+
+            fetchBuffer.add(completedFetch(topicAPartition0));
+            waiter.join(5000);
+
+            assertFalse(waiter.isAlive());
+            assertTrue(result.get());
+        }
+    }
+
+    @Test
+    public void testCloseIsIdempotent() {
+        FetchBuffer fetchBuffer = new FetchBuffer(logContext);
+        fetchBuffer.add(completedFetch(topicAPartition0));
+
+        fetchBuffer.close();
+        fetchBuffer.close();
+
+        assertTrue(fetchBuffer.isEmpty());
+    }
 }

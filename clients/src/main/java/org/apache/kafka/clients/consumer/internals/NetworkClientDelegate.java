@@ -16,8 +16,10 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
+import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientRequest;
 import org.apache.kafka.clients.ClientResponse;
+import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.KafkaClient;
 import org.apache.kafka.clients.NetworkClientUtils;
 import org.apache.kafka.clients.RequestCompletionHandler;
@@ -26,6 +28,8 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.DisconnectException;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.metrics.Metrics;
+import org.apache.kafka.common.metrics.Sensor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -44,6 +48,10 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
+
+import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION;
+import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.CONSUMER_METRIC_GROUP_PREFIX;
 
 /**
  * A wrapper around the {@link org.apache.kafka.clients.NetworkClient} to handle network poll and send operations.
@@ -137,7 +145,7 @@ public class NetworkClientDelegate implements AutoCloseable {
         return true;
     }
 
-    private void checkDisconnects(final long currentTimeMs) {
+    public void checkDisconnects(final long currentTimeMs) {
         // Check the connection of the unsent request. Disconnect the disconnected node if it is unable to be connected.
         Iterator<UnsentRequest> iter = unsentRequests.iterator();
         while (iter.hasNext()) {
@@ -186,8 +194,36 @@ public class NetworkClientDelegate implements AutoCloseable {
         return client.connectionFailed(node) && client.connectionDelay(node, time.milliseconds()) > 0;
     }
 
+    /**
+     * Same as {@link #nodeUnavailable(Node)}; named to match the terminology used by the fetch logic.
+     */
+    public boolean isUnavailable(final Node node) {
+        return nodeUnavailable(node);
+    }
+
+    /**
+     * Checks for an authentication error on a given node and throws the exception if it exists.
+     *
+     * @param node {@link Node} to check for a previous {@link AuthenticationException}; if found it is thrown
+     */
+    public void maybeThrowAuthFailure(final Node node) {
+        AuthenticationException exception = client.authenticationException(node);
+        if (exception != null)
+            throw exception;
+    }
+
     public void close() throws IOException {
         this.client.close();
+    }
+
+    /**
+     * Adds the unsent requests of the given {@link PollResult} to the queue of requests to send.
+     *
+     * @return the time, in milliseconds, until the next poll of the manager that produced the result
+     */
+    public long addAll(PollResult pollResult) {
+        addAll(pollResult.unsentRequests);
+        return pollResult.timeUntilNextPollMs;
     }
 
     public void addAll(final List<UnsentRequest> requests) {
@@ -197,15 +233,36 @@ public class NetworkClientDelegate implements AutoCloseable {
         this.unsentRequests.addAll(requests);
     }
 
+    /**
+     * Returned from {@link RequestManager#poll(long)}: the requests (if any) the manager wants sent, and how long
+     * the network thread may wait before polling the manager again.
+     */
     public static class PollResult {
+
+        public static final long WAIT_FOREVER = Long.MAX_VALUE;
+        public static final PollResult EMPTY = new PollResult(WAIT_FOREVER);
+
         public final long timeUntilNextPollMs;
         public final List<UnsentRequest> unsentRequests;
 
-        public PollResult(final long timeMsTillNextPoll, final List<UnsentRequest> unsentRequests) {
-            this.timeUntilNextPollMs = timeMsTillNextPoll;
+        public PollResult(final long timeUntilNextPollMs, final List<UnsentRequest> unsentRequests) {
+            this.timeUntilNextPollMs = timeUntilNextPollMs;
             this.unsentRequests = Collections.unmodifiableList(unsentRequests);
         }
+
+        public PollResult(final List<UnsentRequest> unsentRequests) {
+            this(WAIT_FOREVER, unsentRequests);
+        }
+
+        public PollResult(final UnsentRequest unsentRequest) {
+            this(Collections.singletonList(unsentRequest));
+        }
+
+        public PollResult(final long timeUntilNextPollMs) {
+            this(timeUntilNextPollMs, Collections.emptyList());
+        }
     }
+
     public static class UnsentRequest {
         private final AbstractRequest.Builder<?> requestBuilder;
         private final FutureCompletionHandler handler;
@@ -221,10 +278,21 @@ public class NetworkClientDelegate implements AutoCloseable {
         }
 
         public UnsentRequest(final AbstractRequest.Builder<?> requestBuilder,
+                             final Node node) {
+            this(requestBuilder, Optional.ofNullable(node));
+        }
+
+        public UnsentRequest(final AbstractRequest.Builder<?> requestBuilder,
                              final Optional<Node> node,
                              final BiConsumer<ClientResponse, Throwable> callback) {
             this(requestBuilder, node);
             this.handler.future().whenComplete(callback);
+        }
+
+        public UnsentRequest(final AbstractRequest.Builder<?> requestBuilder,
+                             final Node node,
+                             final BiConsumer<ClientResponse, Throwable> callback) {
+            this(requestBuilder, Optional.ofNullable(node), callback);
         }
 
         public void setTimer(final Time time, final long requestTimeoutMs) {
@@ -290,5 +358,34 @@ public class NetworkClientDelegate implements AutoCloseable {
         public CompletableFuture<ClientResponse> future() {
             return future;
         }
+    }
+
+    /**
+     * Creates a {@link Supplier} for deferred creation during invocation by
+     * {@link ConsumerNetworkThread}.
+     */
+    public static Supplier<NetworkClientDelegate> supplier(final Time time,
+                                                           final LogContext logContext,
+                                                           final ConsumerMetadata metadata,
+                                                           final ConsumerConfig config,
+                                                           final ApiVersions apiVersions,
+                                                           final Metrics metrics,
+                                                           final FetchMetricsManager fetchMetricsManager,
+                                                           final Sensor throttleTimeSensor) {
+        return new CachedSupplier<NetworkClientDelegate>() {
+            @Override
+            protected NetworkClientDelegate create() {
+                KafkaClient client = ClientUtils.createNetworkClient(config,
+                        metrics,
+                        CONSUMER_METRIC_GROUP_PREFIX,
+                        logContext,
+                        apiVersions,
+                        time,
+                        CONSUMER_MAX_INFLIGHT_REQUESTS_PER_CONNECTION,
+                        metadata,
+                        throttleTimeSensor);
+                return new NetworkClientDelegate(time, config, logContext, client);
+            }
+        };
     }
 }

@@ -27,7 +27,7 @@ import java.util.concurrent.CompletableFuture;
  *
  * @param <T>
  */
-public abstract class CompletableApplicationEvent<T> extends ApplicationEvent {
+public abstract class CompletableApplicationEvent<T> extends ApplicationEvent implements CompletableEvent<T> {
 
     private final CompletableFuture<T> future;
 
@@ -36,6 +36,7 @@ public abstract class CompletableApplicationEvent<T> extends ApplicationEvent {
         this.future = new CompletableFuture<>();
     }
 
+    @Override
     public CompletableFuture<T> future() {
         return future;
     }

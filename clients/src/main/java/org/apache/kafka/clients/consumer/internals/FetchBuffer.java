@@ -17,15 +17,19 @@
 package org.apache.kafka.clients.consumer.internals;
 
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.internals.IdempotentCloser;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.Timer;
 import org.slf4j.Logger;
 
-import java.io.Closeable;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 
 /**
@@ -37,10 +41,12 @@ import java.util.function.Predicate;
  *
  * <em>Note</em>: this class is not thread-safe and is intended to only be used from a single thread.
  */
-public class FetchBuffer implements Closeable {
+public class FetchBuffer implements AutoCloseable {
 
     private final Logger log;
     private final ConcurrentLinkedQueue<CompletedFetch> completedFetches;
+    private final ReentrantLock lock;
+    private final Condition notEmptyCondition;
     private final IdempotentCloser idempotentCloser = new IdempotentCloser();
 
     private CompletedFetch nextInLineFetch;
@@ -48,6 +54,8 @@ public class FetchBuffer implements Closeable {
     public FetchBuffer(final LogContext logContext) {
         this.log = logContext.logger(FetchBuffer.class);
         this.completedFetches = new ConcurrentLinkedQueue<>();
+        this.lock = new ReentrantLock();
+        this.notEmptyCondition = lock.newCondition();
     }
 
     /**
@@ -71,10 +79,58 @@ public class FetchBuffer implements Closeable {
 
     void add(CompletedFetch completedFetch) {
         completedFetches.add(completedFetch);
+        signalNotEmpty();
     }
 
     void addAll(Collection<CompletedFetch> completedFetches) {
         this.completedFetches.addAll(completedFetches);
+        signalNotEmpty();
+    }
+
+    private void signalNotEmpty() {
+        lock.lock();
+        try {
+            notEmptyCondition.signalAll();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Allows the caller to await presence of data in the buffer. The method will block, returning only
+     * under one of the following conditions:
+     *
+     * <ol>
+     *     <li>The buffer was already non-empty on entry</li>
+     *     <li>The buffer was populated during the wait</li>
+     *     <li>The remaining time on the {@link Timer timer} elapsed</li>
+     *     <li>The thread was interrupted</li>
+     * </ol>
+     *
+     * @param timer Timer that provides time to wait
+     * @return {@code true} if the buffer is not empty on return
+     */
+    boolean awaitNotEmpty(Timer timer) {
+        lock.lock();
+        try {
+            while (completedFetches.isEmpty()) {
+                // Update the timer before we head into the loop in case it took a while to get the lock.
+                timer.update();
+
+                if (timer.isExpired())
+                    break;
+
+                if (!notEmptyCondition.await(timer.remainingMs(), TimeUnit.MILLISECONDS))
+                    break;
+            }
+
+            return !completedFetches.isEmpty();
+        } catch (InterruptedException e) {
+            throw new InterruptException("Interrupted while waiting for data to be added to the fetch buffer", e);
+        } finally {
+            lock.unlock();
+            timer.update();
+        }
     }
 
     CompletedFetch nextInLineFetch() {

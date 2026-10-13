@@ -205,6 +205,14 @@
 
     <subpackage name="consumer">
       <allow pkg="org.apache.kafka.clients.consumer" />
+
+      <subpackage name="internals">
+        <subpackage name="events">
+          <!-- The events are processed by (and hand work to) the request managers and the network thread. -->
+          <allow pkg="org.apache.kafka.clients.consumer.internals" />
+          <allow pkg="org.apache.kafka.common.internals" />
+        </subpackage>
+      </subpackage>
     </subpackage>
 
     <subpackage name="producer">
