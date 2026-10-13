@@ -950,15 +950,21 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
     /**
-     * Refresh the committed offsets for partitions that require initialization.
+     * Initialize the positions of the partitions that require it using their committed offsets.
      *
      * @param timer Timer bounding how long this method can block
-     * @return true iff the operation completed within the timeout
+     * @return true iff the committed offsets were fetched within the timeout and the positions were refreshed
      */
-    public boolean refreshCommittedOffsetsIfNeeded(Timer timer) {
+    public boolean initWithCommittedOffsetsIfNeeded(Timer timer) {
         final Set<TopicPartition> initializingPartitions = subscriptions.initializingPartitions();
         final Map<TopicPartition, OffsetAndMetadata> offsets = fetchCommittedOffsets(initializingPartitions, timer);
-        return refreshCommittedOffsets(offsets, this.metadata, this.subscriptions);
+
+        // "offsets" will be null if the offset fetch requests did not receive responses within the given timeout
+        if (offsets == null)
+            return false;
+
+        refreshCommittedOffsets(offsets, this.metadata, this.subscriptions);
+        return true;
     }
 
     /**

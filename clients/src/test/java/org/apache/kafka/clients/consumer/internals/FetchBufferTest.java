@@ -26,13 +26,18 @@ import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.common.utils.Timer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createFetchMetricsManager;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createMetrics;
@@ -169,6 +174,106 @@ public class FetchBufferTest {
             fetchBuffer.retainAll(partitions());
             assertEquals(partitions(), fetchBuffer.bufferedPartitions());
         }
+    }
+
+    @Test
+    public void testAwaitNotEmptyReturnsImmediatelyIfDataIsAvailable() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            fetchBuffer.add(completedFetch(topicAPartition0));
+
+            long start = System.nanoTime();
+            fetchBuffer.awaitNotEmpty(Time.SYSTEM.timer(30_000));
+
+            assertTrue(System.nanoTime() - start < TimeUnit.SECONDS.toNanos(10));
+            assertFalse(fetchBuffer.isEmpty());
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyTimesOutIfThereIsNoData() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            Timer timer = Time.SYSTEM.timer(50);
+
+            fetchBuffer.awaitNotEmpty(timer);
+
+            assertTrue(timer.isExpired());
+            assertTrue(fetchBuffer.isEmpty());
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyWithExpiredTimerDoesNotWait() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            Timer timer = Time.SYSTEM.timer(0);
+
+            fetchBuffer.awaitNotEmpty(timer);
+
+            assertTrue(timer.isExpired());
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyIsWokenUpByAnotherThreadAddingData() throws Exception {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            Timer timer = Time.SYSTEM.timer(60_000);
+            CountDownLatch waiting = new CountDownLatch(1);
+            AtomicBoolean returned = new AtomicBoolean();
+            Thread waiter = new Thread(() -> {
+                waiting.countDown();
+                fetchBuffer.awaitNotEmpty(timer);
+                returned.set(true);
+            });
+            waiter.start();
+
+            assertTrue(waiting.await(10, TimeUnit.SECONDS));
+
+            fetchBuffer.add(completedFetch(topicAPartition0));
+            waiter.join(10_000);
+
+            assertFalse(waiter.isAlive());
+            assertTrue(returned.get());
+            // Woken up by the data, not by the timeout
+            assertFalse(timer.isExpired());
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyIsWokenUpByAddAll() throws Exception {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            Timer timer = Time.SYSTEM.timer(60_000);
+            Thread waiter = new Thread(() -> fetchBuffer.awaitNotEmpty(timer));
+            waiter.start();
+
+            fetchBuffer.addAll(Arrays.asList(completedFetch(topicAPartition0), completedFetch(topicAPartition1)));
+            waiter.join(10_000);
+
+            assertFalse(waiter.isAlive());
+            assertFalse(timer.isExpired());
+        }
+    }
+
+    @Test
+    public void testAddAllWithNoFetchesIsANoOp() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            fetchBuffer.addAll(Collections.emptyList());
+
+            assertTrue(fetchBuffer.isEmpty());
+        }
+    }
+
+    @Test
+    public void testCloseIsIdempotent() {
+        FetchBuffer fetchBuffer = new FetchBuffer(logContext);
+        fetchBuffer.add(completedFetch(topicAPartition0));
+
+        fetchBuffer.close();
+        assertTrue(fetchBuffer.isEmpty());
+
+        // A fetch added after the close isn't touched by the (ignored) subsequent closes
+        fetchBuffer.add(completedFetch(topicAPartition1));
+        fetchBuffer.close();
+        fetchBuffer.close();
+        assertFalse(fetchBuffer.isEmpty());
     }
 
     private CompletedFetch completedFetch(TopicPartition tp) {
