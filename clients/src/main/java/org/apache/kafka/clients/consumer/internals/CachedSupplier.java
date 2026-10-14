@@ -16,19 +16,28 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
-import org.apache.kafka.clients.consumer.internals.events.BackgroundEvent;
-import org.apache.kafka.clients.consumer.internals.events.ErrorBackgroundEvent;
+import java.util.function.Supplier;
 
-import java.util.Queue;
+/**
+ * Provides a cached, lazily loaded instance of type T. The instance is created on the first invocation of
+ * {@link #get()} and the same instance is returned from then on.
+ *
+ * <p/>
+ *
+ * This is used by the asynchronous consumer to ensure that objects owned by the background thread are not
+ * instantiated until that thread runs, so the application thread never holds a reference to them.
+ */
+public abstract class CachedSupplier<T> implements Supplier<T> {
 
-public class ErrorEventHandler {
-    private final Queue<BackgroundEvent> backgroundEventQueue;
+    private T result;
 
-    public ErrorEventHandler(Queue<BackgroundEvent> backgroundEventQueue) {
-        this.backgroundEventQueue = backgroundEventQueue;
-    }
+    protected abstract T create();
 
-    public void handle(Throwable e) {
-        backgroundEventQueue.add(new ErrorBackgroundEvent(e));
+    @Override
+    public synchronized T get() {
+        if (result == null)
+            result = create();
+
+        return result;
     }
 }

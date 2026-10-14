@@ -17,15 +17,19 @@
 package org.apache.kafka.clients.consumer.internals;
 
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.internals.IdempotentCloser;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.Timer;
 import org.slf4j.Logger;
 
-import java.io.Closeable;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Predicate;
 
 /**
@@ -35,19 +39,25 @@ import java.util.function.Predicate;
  *
  * <p/>
  *
- * <em>Note</em>: this class is not thread-safe and is intended to only be used from a single thread.
+ * <em>Note</em>: the queue of {@link CompletedFetch}es may be shared between the thread that adds the fetches (the
+ * network thread in the case of the asynchronous consumer) and the thread that consumes them (the application
+ * thread). The next-in-line fetch is only intended to be used from the consuming thread.
  */
-public class FetchBuffer implements Closeable {
+public class FetchBuffer implements AutoCloseable {
 
     private final Logger log;
     private final ConcurrentLinkedQueue<CompletedFetch> completedFetches;
     private final IdempotentCloser idempotentCloser = new IdempotentCloser();
+    private final ReentrantLock lock;
+    private final Condition notEmptyCondition;
 
     private CompletedFetch nextInLineFetch;
 
     public FetchBuffer(final LogContext logContext) {
         this.log = logContext.logger(FetchBuffer.class);
         this.completedFetches = new ConcurrentLinkedQueue<>();
+        this.lock = new ReentrantLock();
+        this.notEmptyCondition = lock.newCondition();
     }
 
     /**
@@ -56,7 +66,13 @@ public class FetchBuffer implements Closeable {
      * @return {@code true} if the buffer is empty, {@code false} otherwise
      */
     boolean isEmpty() {
-        return completedFetches.isEmpty();
+        lock.lock();
+
+        try {
+            return completedFetches.isEmpty();
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -66,31 +82,114 @@ public class FetchBuffer implements Closeable {
      * @return {@code true} if there are completed fetches that match the {@link Predicate}, {@code false} otherwise
      */
     boolean hasCompletedFetches(Predicate<CompletedFetch> predicate) {
-        return completedFetches.stream().anyMatch(predicate);
+        lock.lock();
+
+        try {
+            return completedFetches.stream().anyMatch(predicate);
+        } finally {
+            lock.unlock();
+        }
     }
 
     void add(CompletedFetch completedFetch) {
-        completedFetches.add(completedFetch);
+        lock.lock();
+
+        try {
+            completedFetches.add(completedFetch);
+            notEmptyCondition.signalAll();
+        } finally {
+            lock.unlock();
+        }
     }
 
     void addAll(Collection<CompletedFetch> completedFetches) {
-        this.completedFetches.addAll(completedFetches);
+        if (completedFetches == null || completedFetches.isEmpty())
+            return;
+
+        lock.lock();
+
+        try {
+            this.completedFetches.addAll(completedFetches);
+            notEmptyCondition.signalAll();
+        } finally {
+            lock.unlock();
+        }
     }
 
     CompletedFetch nextInLineFetch() {
-        return nextInLineFetch;
+        lock.lock();
+
+        try {
+            return nextInLineFetch;
+        } finally {
+            lock.unlock();
+        }
     }
 
-    void setNextInLineFetch(CompletedFetch completedFetch) {
-        this.nextInLineFetch = completedFetch;
+    void setNextInLineFetch(CompletedFetch nextInLineFetch) {
+        lock.lock();
+
+        try {
+            this.nextInLineFetch = nextInLineFetch;
+        } finally {
+            lock.unlock();
+        }
     }
 
     CompletedFetch peek() {
-        return completedFetches.peek();
+        lock.lock();
+
+        try {
+            return completedFetches.peek();
+        } finally {
+            lock.unlock();
+        }
     }
 
     CompletedFetch poll() {
-        return completedFetches.poll();
+        lock.lock();
+
+        try {
+            return completedFetches.poll();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Allows the caller to await presence of data in the buffer. The method will block, returning only
+     * under one of the following conditions:
+     *
+     * <ol>
+     *     <li>The buffer was already non-empty on entry</li>
+     *     <li>The buffer was populated during the wait</li>
+     *     <li>The remaining time on the {@link Timer timer} elapsed</li>
+     *     <li>The thread was interrupted</li>
+     * </ol>
+     *
+     * @param timer Timer that provides time to wait
+     * @throws InterruptException if the thread is interrupted while waiting
+     */
+    void awaitNotEmpty(Timer timer) {
+        lock.lock();
+
+        try {
+            while (completedFetches.isEmpty()) {
+                // Update the timer before we head into the loop in case it took a while to get the lock.
+                timer.update();
+
+                if (timer.isExpired())
+                    break;
+
+                if (!notEmptyCondition.await(timer.remainingMs(), TimeUnit.MILLISECONDS))
+                    break;
+            }
+        } catch (InterruptedException e) {
+            throw new InterruptException("Timeout waiting for results from fetching records", e);
+        } finally {
+            lock.unlock();
+            timer.update();
+        }
     }
 
     /**
@@ -100,10 +199,16 @@ public class FetchBuffer implements Closeable {
      * @param partitions {@link Set} of {@link TopicPartition}s for which any buffered data should be kept
      */
     void retainAll(final Set<TopicPartition> partitions) {
-        completedFetches.removeIf(cf -> maybeDrain(partitions, cf));
+        lock.lock();
 
-        if (maybeDrain(partitions, nextInLineFetch))
-            nextInLineFetch = null;
+        try {
+            completedFetches.removeIf(cf -> maybeDrain(partitions, cf));
+
+            if (maybeDrain(partitions, nextInLineFetch))
+                nextInLineFetch = null;
+        } finally {
+            lock.unlock();
+        }
     }
 
     private boolean maybeDrain(final Set<TopicPartition> partitions, final CompletedFetch completedFetch) {
@@ -122,14 +227,20 @@ public class FetchBuffer implements Closeable {
      * @return {@link TopicPartition Partition} set
      */
     Set<TopicPartition> bufferedPartitions() {
-        final Set<TopicPartition> partitions = new HashSet<>();
+        lock.lock();
 
-        if (nextInLineFetch != null && !nextInLineFetch.isConsumed()) {
-            partitions.add(nextInLineFetch.partition);
+        try {
+            final Set<TopicPartition> partitions = new HashSet<>();
+
+            if (nextInLineFetch != null && !nextInLineFetch.isConsumed()) {
+                partitions.add(nextInLineFetch.partition);
+            }
+
+            completedFetches.forEach(cf -> partitions.add(cf.partition));
+            return partitions;
+        } finally {
+            lock.unlock();
         }
-
-        completedFetches.forEach(cf -> partitions.add(cf.partition));
-        return partitions;
     }
 
     @Override
@@ -137,13 +248,19 @@ public class FetchBuffer implements Closeable {
         idempotentCloser.close(() -> {
             log.debug("Closing the fetch buffer");
 
-            if (nextInLineFetch != null) {
-                nextInLineFetch.drain();
-                nextInLineFetch = null;
-            }
+            lock.lock();
 
-            completedFetches.forEach(CompletedFetch::drain);
-            completedFetches.clear();
+            try {
+                if (nextInLineFetch != null) {
+                    nextInLineFetch.drain();
+                    nextInLineFetch = null;
+                }
+
+                completedFetches.forEach(CompletedFetch::drain);
+                completedFetches.clear();
+            } finally {
+                lock.unlock();
+            }
         }, () -> log.warn("The fetch buffer was previously closed"));
     }
 }

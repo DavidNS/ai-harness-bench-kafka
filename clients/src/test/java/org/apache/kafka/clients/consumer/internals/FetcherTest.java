@@ -2840,7 +2840,7 @@ public class FetcherTest {
                 isolationLevel,
                 apiVersions);
 
-        FetchConfig<byte[], byte[]> fetchConfig = new FetchConfig<>(
+        FetchConfig fetchConfig = new FetchConfig(
                 minBytes,
                 maxBytes,
                 maxWaitMs,
@@ -2848,7 +2848,6 @@ public class FetcherTest {
                 2 * numPartitions,
                 true, // check crcs
                 CommonClientConfigs.DEFAULT_CLIENT_RACK,
-                new Deserializers<>(new ByteArrayDeserializer(), new ByteArrayDeserializer()),
                 isolationLevel);
         fetcher = new Fetcher<byte[], byte[]>(
                 logContext,
@@ -2856,6 +2855,7 @@ public class FetcherTest {
                 metadata,
                 subscriptions,
                 fetchConfig,
+                new Deserializers<>(new ByteArrayDeserializer(), new ByteArrayDeserializer()),
                 metricsManager,
                 time) {
             @Override
@@ -3642,7 +3642,7 @@ public class FetcherTest {
                                      SubscriptionState subscriptionState,
                                      LogContext logContext) {
         buildDependencies(metricConfig, metadataExpireMs, subscriptionState, logContext);
-        FetchConfig<K, V> fetchConfig = new FetchConfig<>(
+        FetchConfig fetchConfig = new FetchConfig(
                 minBytes,
                 maxBytes,
                 maxWaitMs,
@@ -3650,7 +3650,6 @@ public class FetcherTest {
                 maxPollRecords,
                 true, // check crc
                 CommonClientConfigs.DEFAULT_CLIENT_RACK,
-                new Deserializers<>(keyDeserializer, valueDeserializer),
                 isolationLevel);
         fetcher = spy(new Fetcher<>(
                 logContext,
@@ -3658,6 +3657,7 @@ public class FetcherTest {
                 metadata,
                 subscriptionState,
                 fetchConfig,
+                new Deserializers<>(keyDeserializer, valueDeserializer),
                 metricsManager,
                 time));
         offsetFetcher = new OffsetFetcher(logContext,

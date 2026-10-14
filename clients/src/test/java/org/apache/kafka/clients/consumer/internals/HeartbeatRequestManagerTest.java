@@ -20,6 +20,7 @@ import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.clients.consumer.internals.events.BackgroundEventHandler;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatResponseData;
@@ -84,7 +85,7 @@ public class HeartbeatRequestManagerTest {
 
     private String memberId = "member-id";
     private int memberEpoch = 1;
-    private ErrorEventHandler errorEventHandler;
+    private BackgroundEventHandler backgroundEventHandler;
 
     @BeforeEach
     public void setUp() {
@@ -96,7 +97,7 @@ public class HeartbeatRequestManagerTest {
         subscriptionState = mock(SubscriptionState.class);
         membershipManager = spy(new MembershipManagerImpl(GROUP_ID, logContext));
         heartbeatRequestState = mock(HeartbeatRequestManager.HeartbeatRequestState.class);
-        errorEventHandler = mock(ErrorEventHandler.class);
+        backgroundEventHandler = mock(BackgroundEventHandler.class);
         heartbeatRequestManager = createManager();
     }
 
@@ -213,7 +214,7 @@ public class HeartbeatRequestManagerTest {
         assertEquals(1, result.unsentRequests.size());
         result.unsentRequests.get(0).future().completeExceptionally(new KafkaException("fatal"));
         verify(membershipManager).transitionToFailed();
-        verify(errorEventHandler).handle(any());
+        verify(backgroundEventHandler).add(any());
     }
 
     @Test
@@ -304,19 +305,19 @@ public class HeartbeatRequestManagerTest {
 
         switch (error) {
             case NONE:
-                verify(errorEventHandler, never()).handle(any());
+                verify(backgroundEventHandler, never()).add(any());
                 verify(membershipManager, times(2)).updateState(mockResponse.data());
                 assertEquals(HEARTBEAT_INTERVAL_MS, heartbeatRequestState.nextHeartbeatMs(time.milliseconds()));
                 break;
 
             case COORDINATOR_LOAD_IN_PROGRESS:
-                verify(errorEventHandler, never()).handle(any());
+                verify(backgroundEventHandler, never()).add(any());
                 assertEquals(RETRY_BACKOFF_MS, heartbeatRequestState.nextHeartbeatMs(time.milliseconds()));
                 break;
 
             case COORDINATOR_NOT_AVAILABLE:
             case NOT_COORDINATOR:
-                verify(errorEventHandler, never()).handle(any());
+                verify(backgroundEventHandler, never()).add(any());
                 verify(coordinatorRequestManager).markCoordinatorUnknown(any(), anyLong());
                 assertEquals(0, heartbeatRequestState.nextHeartbeatMs(time.milliseconds()));
                 break;
@@ -326,7 +327,7 @@ public class HeartbeatRequestManagerTest {
                     // The memberStateManager should have stopped heartbeat at this point
                     ensureFatalError();
                 } else {
-                    verify(errorEventHandler, never()).handle(any());
+                    verify(backgroundEventHandler, never()).add(any());
                     assertEquals(0, heartbeatRequestState.nextHeartbeatMs(time.milliseconds()));
                 }
                 break;
@@ -335,7 +336,7 @@ public class HeartbeatRequestManagerTest {
 
     private void ensureFatalError() {
         verify(membershipManager).transitionToFailed();
-        verify(errorEventHandler).handle(any());
+        verify(backgroundEventHandler).add(any());
         ensureHeartbeatStopped();
     }
 
@@ -405,6 +406,6 @@ public class HeartbeatRequestManagerTest {
             subscriptionState,
             membershipManager,
             heartbeatRequestState,
-            errorEventHandler);
+            backgroundEventHandler);
     }
 }

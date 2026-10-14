@@ -16,13 +16,18 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
+import org.apache.kafka.clients.ApiVersions;
 import org.apache.kafka.clients.ClientResponse;
+import org.apache.kafka.clients.ClientUtils;
 import org.apache.kafka.clients.MockClient;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.errors.DisconnectException;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.internals.ClusterResourceListeners;
 import org.apache.kafka.common.message.FindCoordinatorRequestData;
+import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
@@ -33,10 +38,13 @@ import org.apache.kafka.test.TestUtils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import static org.apache.kafka.clients.consumer.ConsumerConfig.GROUP_ID_CONFIG;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
@@ -44,6 +52,7 @@ import static org.apache.kafka.clients.consumer.ConsumerConfig.REQUEST_TIMEOUT_M
 import static org.apache.kafka.clients.consumer.ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -120,6 +129,86 @@ public class NetworkClientDelegateTest {
         unsentRequest.handler().onComplete(response);
         time.sleep(100);
         assertEquals(timeMs, unsentRequest.handler().completionTimeMs());
+    }
+
+    @Test
+    public void testAddAllPollResultQueuesRequestsAndReturnsTimeUntilNextPoll() throws Exception {
+        try (NetworkClientDelegate ncd = newNetworkClientDelegate()) {
+            NetworkClientDelegate.UnsentRequest first = newUnsentFindCoordinatorRequest();
+            NetworkClientDelegate.UnsentRequest second = newUnsentFindCoordinatorRequest();
+
+            assertEquals(1234L, ncd.addAll(new NetworkClientDelegate.PollResult(1234L, Arrays.asList(first, second))));
+            assertEquals(2, ncd.unsentRequests().size());
+
+            // An empty result does not queue anything and reports "no need to poll".
+            assertEquals(Long.MAX_VALUE, ncd.addAll(NetworkClientDelegate.PollResult.EMPTY));
+            assertEquals(2, ncd.unsentRequests().size());
+        }
+    }
+
+    @Test
+    public void testPollResultConstructors() {
+        NetworkClientDelegate.UnsentRequest request = newUnsentFindCoordinatorRequest();
+
+        assertEquals(Long.MAX_VALUE, NetworkClientDelegate.PollResult.EMPTY.timeUntilNextPollMs);
+        assertTrue(NetworkClientDelegate.PollResult.EMPTY.unsentRequests.isEmpty());
+
+        NetworkClientDelegate.PollResult single = new NetworkClientDelegate.PollResult(request);
+        assertEquals(Long.MAX_VALUE, single.timeUntilNextPollMs);
+        assertEquals(Collections.singletonList(request), single.unsentRequests);
+
+        NetworkClientDelegate.PollResult list = new NetworkClientDelegate.PollResult(Collections.singletonList(request));
+        assertEquals(Long.MAX_VALUE, list.timeUntilNextPollMs);
+        assertEquals(1, list.unsentRequests.size());
+
+        NetworkClientDelegate.PollResult timeOnly = new NetworkClientDelegate.PollResult(15L);
+        assertEquals(15L, timeOnly.timeUntilNextPollMs);
+        assertTrue(timeOnly.unsentRequests.isEmpty());
+    }
+
+    @Test
+    public void testUnsentRequestWithNodeAndCallback() {
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        Node node = mockNode();
+        NetworkClientDelegate.UnsentRequest request = new NetworkClientDelegate.UnsentRequest(
+                new FindCoordinatorRequest.Builder(new FindCoordinatorRequestData()
+                        .setKey(GROUP_ID)
+                        .setKeyType(FindCoordinatorRequest.CoordinatorType.GROUP.id())),
+                node,
+                (response, t) -> error.set(t));
+
+        assertEquals(Optional.of(node), request.node());
+        request.handler().onFailure(time.milliseconds(), new TimeoutException());
+        assertTrue(error.get() instanceof TimeoutException);
+    }
+
+    @Test
+    public void testSupplierCreatesDelegateOnlyOnceAndLazily() throws Exception {
+        Properties properties = new Properties();
+        properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        properties.put(KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        properties.put(VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        ConsumerConfig config = new ConsumerConfig(properties);
+        LogContext logContext = new LogContext();
+        SubscriptionState subscriptions = new SubscriptionState(logContext, OffsetResetStrategy.EARLIEST);
+        ConsumerMetadata metadata = new ConsumerMetadata(config, subscriptions, logContext, new ClusterResourceListeners());
+        metadata.bootstrap(ClientUtils.parseAndValidateAddresses(config));
+
+        try (Metrics metrics = new Metrics(time)) {
+            FetchMetricsManager fetchMetricsManager = new FetchMetricsManager(metrics, new FetchMetricsRegistry());
+            Supplier<NetworkClientDelegate> supplier = NetworkClientDelegate.supplier(time,
+                    logContext,
+                    metadata,
+                    config,
+                    new ApiVersions(),
+                    metrics,
+                    fetchMetricsManager);
+
+            NetworkClientDelegate first = supplier.get();
+            assertNotNull(first);
+            assertSame(first, supplier.get());
+            first.close();
+        }
     }
 
     public NetworkClientDelegate newNetworkClientDelegate() {

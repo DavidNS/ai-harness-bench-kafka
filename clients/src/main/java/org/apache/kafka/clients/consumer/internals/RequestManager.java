@@ -23,6 +23,23 @@ import org.apache.kafka.clients.consumer.internals.NetworkClientDelegate.PollRes
  * the next poll event.
  */
 public interface RequestManager {
+
+    /**
+     * On each poll cycle of the network thread, this method is invoked to give the {@code RequestManager} the
+     * opportunity to create the requests that should be sent.
+     *
+     * @param currentTimeMs The current time, in milliseconds
+     * @return {@link PollResult} with the requests to send and the time until the next poll
+     */
     PollResult poll(long currentTimeMs);
 
+    /**
+     * On shutdown of the network thread, this method is invoked to give the {@code RequestManager} the opportunity
+     * to create any final requests (such as closing fetch sessions) that should be sent before it terminates.
+     *
+     * @return {@link PollResult} with the requests to send; by default, there are none
+     */
+    default PollResult pollOnClose() {
+        return PollResult.EMPTY;
+    }
 }

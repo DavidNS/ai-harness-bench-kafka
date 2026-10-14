@@ -18,6 +18,7 @@ package org.apache.kafka.clients.consumer.internals;
 
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -26,6 +27,7 @@ import org.apache.kafka.common.utils.BufferSupplier;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.common.utils.Timer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +35,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createFetchMetricsManager;
 import static org.apache.kafka.clients.consumer.internals.ConsumerUtils.createMetrics;
@@ -42,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -169,6 +173,79 @@ public class FetchBufferTest {
             fetchBuffer.retainAll(partitions());
             assertEquals(partitions(), fetchBuffer.bufferedPartitions());
         }
+    }
+
+    @Test
+    public void testAwaitNotEmptyReturnsImmediatelyWhenDataIsAvailable() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            fetchBuffer.add(completedFetch(topicAPartition0));
+
+            long start = System.nanoTime();
+            fetchBuffer.awaitNotEmpty(Time.SYSTEM.timer(10000));
+
+            assertTrue(System.nanoTime() - start < TimeUnit.SECONDS.toNanos(5));
+            assertFalse(fetchBuffer.isEmpty());
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyReturnsWhenTimerExpiresOnEmptyBuffer() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            Timer timer = Time.SYSTEM.timer(50);
+
+            fetchBuffer.awaitNotEmpty(timer);
+
+            assertTrue(timer.isExpired());
+            assertTrue(fetchBuffer.isEmpty());
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyIsWokenUpByAnotherThreadAddingData() throws Exception {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            Timer timer = Time.SYSTEM.timer(30000);
+            Thread producer = new Thread(() -> {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                fetchBuffer.add(completedFetch(topicAPartition0));
+            });
+            producer.start();
+
+            fetchBuffer.awaitNotEmpty(timer);
+            producer.join();
+
+            assertFalse(fetchBuffer.isEmpty());
+            assertFalse(timer.isExpired());
+        }
+    }
+
+    @Test
+    public void testAwaitNotEmptyThrowsInterruptExceptionWhenInterrupted() {
+        try (FetchBuffer fetchBuffer = new FetchBuffer(logContext)) {
+            Thread.currentThread().interrupt();
+
+            try {
+                assertThrows(InterruptException.class, () -> fetchBuffer.awaitNotEmpty(Time.SYSTEM.timer(30000)));
+            } finally {
+                // InterruptException restores the interrupt flag; clear it so it does not leak into other tests.
+                Thread.interrupted();
+            }
+        }
+    }
+
+    @Test
+    public void testCloseIsIdempotent() {
+        FetchBuffer fetchBuffer = new FetchBuffer(logContext);
+        fetchBuffer.add(completedFetch(topicAPartition0));
+
+        fetchBuffer.close();
+        fetchBuffer.close();
+
+        assertTrue(fetchBuffer.isEmpty());
+        assertNull(fetchBuffer.nextInLineFetch());
     }
 
     private CompletedFetch completedFetch(TopicPartition tp) {

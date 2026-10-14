@@ -16,6 +16,8 @@
  */
 package org.apache.kafka.clients.consumer.internals;
 
+import org.apache.kafka.clients.consumer.internals.events.BackgroundEventHandler;
+import org.apache.kafka.clients.consumer.internals.events.ErrorBackgroundEvent;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.errors.GroupAuthorizationException;
 import org.apache.kafka.common.errors.RetriableException;
@@ -49,7 +51,7 @@ public class CoordinatorRequestManager implements RequestManager {
     private static final long COORDINATOR_DISCONNECT_LOGGING_INTERVAL_MS = 60 * 1000;
     private final Time time;
     private final Logger log;
-    private final ErrorEventHandler nonRetriableErrorHandler;
+    private final BackgroundEventHandler backgroundEventHandler;
     private final String groupId;
 
     private final RequestState coordinatorRequestState;
@@ -62,13 +64,13 @@ public class CoordinatorRequestManager implements RequestManager {
         final LogContext logContext,
         final long retryBackoffMs,
         final long retryBackoffMaxMs,
-        final ErrorEventHandler errorHandler,
+        final BackgroundEventHandler backgroundEventHandler,
         final String groupId
     ) {
         Objects.requireNonNull(groupId);
         this.time = time;
         this.log = logContext.logger(this.getClass());
-        this.nonRetriableErrorHandler = errorHandler;
+        this.backgroundEventHandler = backgroundEventHandler;
         this.groupId = groupId;
         this.coordinatorRequestState = new RequestState(
                 logContext,
@@ -175,12 +177,12 @@ public class CoordinatorRequestManager implements RequestManager {
 
         if (exception == Errors.GROUP_AUTHORIZATION_FAILED.exception()) {
             log.debug("FindCoordinator request failed due to authorization error {}", exception.getMessage());
-            nonRetriableErrorHandler.handle(GroupAuthorizationException.forGroupId(this.groupId));
+            backgroundEventHandler.add(new ErrorBackgroundEvent(GroupAuthorizationException.forGroupId(this.groupId)));
             return;
         }
 
         log.warn("FindCoordinator request failed due to fatal exception", exception);
-        nonRetriableErrorHandler.handle(exception);
+        backgroundEventHandler.add(new ErrorBackgroundEvent(exception));
     }
 
     /**

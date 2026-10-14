@@ -24,6 +24,7 @@ import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.ClusterResource;
+import org.apache.kafka.clients.consumer.internals.events.BackgroundEventHandler;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
@@ -101,7 +102,7 @@ public class OffsetsRequestManagerTest {
         apiVersions = mock(ApiVersions.class);
         requestManager = new OffsetsRequestManager(subscriptionState, metadata,
                 DEFAULT_ISOLATION_LEVEL, time, RETRY_BACKOFF_MS, REQUEST_TIMEOUT_MS,
-                apiVersions, mock(NetworkClientDelegate.class), new LogContext());
+                apiVersions, mock(NetworkClientDelegate.class), mock(BackgroundEventHandler.class), new LogContext());
     }
 
     @Test
