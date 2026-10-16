@@ -26,6 +26,7 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
+import org.apache.kafka.common.errors.IneligibleReplicaException;
 import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
 import org.apache.kafka.common.errors.InvalidReplicationFactorException;
 import org.apache.kafka.common.errors.InvalidRequestException;
@@ -737,6 +738,7 @@ public class ReplicationControlManager {
                 }
                 PartitionAssignment partitionAssignment = new PartitionAssignment(assignment.brokerIds(), clusterDescriber);
                 validateManualPartitionAssignment(partitionAssignment, replicationFactor);
+                validateNoCordonedBrokers(partitionAssignment.replicas());
                 replicationFactor = OptionalInt.of(assignment.brokerIds().size());
                 List<Integer> isr = assignment.brokerIds().stream().
                     filter(clusterControl::isActive).toList();
@@ -1531,6 +1533,30 @@ public class ReplicationControlManager {
         }
     }
 
+    /**
+     * Record the cordoned log directories reported by a broker, if they changed.
+     *
+     * @param cordonedDirs  The cordoned directories, or null if the broker did not report them.
+     */
+    void handleCordonedDirectories(
+        int brokerId,
+        long brokerEpoch,
+        List<Uuid> cordonedDirs,
+        List<ApiMessageAndVersion> records
+    ) {
+        if (cordonedDirs == null) return;
+        BrokerRegistration registration = clusterControl.registration(brokerId);
+        List<Uuid> sorted = new ArrayList<>(new HashSet<>(cordonedDirs));
+        sorted.sort(Uuid::compareTo);
+        if (sorted.equals(registration.cordonedDirectories())) return;
+        records.add(new ApiMessageAndVersion(new BrokerRegistrationChangeRecord().
+            setBrokerId(brokerId).setBrokerEpoch(brokerEpoch).
+            setCordonedLogDirs(sorted),
+            (short) 3));
+        log.info("Cordoned directories in broker {} changed from {} to {}",
+            brokerId, registration.cordonedDirectories(), sorted);
+    }
+
     ControllerResult<ElectLeadersResponseData> electLeaders(ElectLeadersRequestData request) {
         ElectionType electionType = electionType(request.electionType());
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
@@ -1666,6 +1692,9 @@ public class ReplicationControlManager {
             request.currentMetadataOffset());
         if (featureControl.metadataVersionOrThrow().isDirectoryAssignmentSupported()) {
             handleDirectoriesOffline(brokerId, brokerEpoch, request.offlineLogDirs(), records);
+        }
+        if (featureControl.metadataVersionOrThrow().isCordonedLogDirsSupported()) {
+            handleCordonedDirectories(brokerId, brokerEpoch, request.cordonedLogDirs(), records);
         }
         boolean isCaughtUp = request.currentMetadataOffset() >= registerBrokerRecordOffset;
         BrokerHeartbeatReply reply = new BrokerHeartbeatReply(isCaughtUp,
@@ -1928,6 +1957,7 @@ public class ReplicationControlManager {
                 List<Integer> replicas = topic.assignments().get(i).brokerIds();
                 PartitionAssignment partitionAssignment = new PartitionAssignment(replicas, clusterDescriber);
                 validateManualPartitionAssignment(partitionAssignment, OptionalInt.of(replicationFactor));
+                validateNoCordonedBrokers(partitionAssignment.replicas());
                 partitionAssignments.add(partitionAssignment);
                 List<Integer> isr = partitionAssignment.replicas().stream().
                     filter(clusterControl::isActive).toList();
@@ -1963,6 +1993,21 @@ public class ReplicationControlManager {
                         setEligibleLeaderReplicasEnabled(featureControl.isElrFeatureEnabled()).
                         build()));
             partitionId++;
+        }
+    }
+
+    private boolean acceptsNewPartitions(int brokerId) {
+        BrokerRegistration registration = clusterControl.brokerRegistrations().get(brokerId);
+        return registration == null || registration.hasUncordonedDirectory();
+    }
+
+    void validateNoCordonedBrokers(List<Integer> brokerIds) {
+        for (int brokerId : brokerIds) {
+            if (!acceptsNewPartitions(brokerId)) {
+                throw new InvalidReplicaAssignmentException("The manual partition " +
+                    "assignment includes broker " + brokerId + ", but all of its log " +
+                    "directories are cordoned.");
+            }
         }
     }
 
@@ -2234,6 +2279,13 @@ public class ReplicationControlManager {
         PartitionAssignment targetAssignment = new PartitionAssignment(target.replicas(), clusterDescriber);
 
         validateManualPartitionAssignment(targetAssignment, OptionalInt.empty());
+        for (int brokerId : targetAssignment.replicas()) {
+            // Replicas which are already part of the partition may stay where they are.
+            if (!Replicas.contains(part.replicas, brokerId) && !acceptsNewPartitions(brokerId)) {
+                throw new IneligibleReplicaException("The reassignment includes broker " + brokerId +
+                    ", but all of its log directories are cordoned.");
+            }
+        }
         if (!allowRFChange) {
             validatePartitionReplicationFactorUnchanged(part, target);
         }

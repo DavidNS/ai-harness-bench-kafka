@@ -249,6 +249,35 @@ class BrokerLifecycleManagerTest {
   }
 
   @Test
+  def testHeartbeatReportsCordonedDirsOnlyAfterCatchUp(): Unit = {
+    val ctx = new RegistrationTestContext(configProperties)
+    manager = new BrokerLifecycleManager(ctx.config, ctx.time, "cordoned-dirs-in-heartbeat-", util.Set.of(Uuid.fromString("0IbF1sjhSGG6FNvnrPbqQg")))
+    val controllerNode = new Node(3000, "localhost", 8021)
+    ctx.controllerNodeProvider.node.set(controllerNode)
+    val cordoned = new java.util.concurrent.atomic.AtomicReference[util.Set[Uuid]](util.Set.of(Uuid.fromString("0IbF1sjhSGG6FNvnrPbqQg")))
+    manager.setCordonedLogDirsSupplier(() => cordoned.get())
+
+    val registration = prepareResponse(ctx, new BrokerRegistrationResponse(new BrokerRegistrationResponseData().setBrokerEpoch(1000)))
+    manager.start(() => ctx.highestMetadataOffset.get(),
+      ctx.mockChannelManager, ctx.clusterId, ctx.advertisedListeners,
+      Collections.emptyMap(), OptionalLong.empty())
+    poll(ctx, manager, registration)
+
+    def nextHeartbeat(caughtUp: Boolean): BrokerHeartbeatRequest =
+      poll(ctx, manager, prepareResponse[BrokerHeartbeatRequest](ctx,
+        new BrokerHeartbeatResponse(new BrokerHeartbeatResponseData().setIsCaughtUp(caughtUp))))
+
+    // Not reported while the broker is still catching up with the metadata
+    assertNull(nextHeartbeat(caughtUp = true).data().cordonedLogDirs())
+    assertEquals(Set("0IbF1sjhSGG6FNvnrPbqQg"),
+      nextHeartbeat(caughtUp = true).data().cordonedLogDirs().asScala.map(_.toString).toSet)
+
+    // Changes are picked up, and an empty list is reported to uncordon
+    cordoned.set(util.Set.of())
+    assertEquals(Set.empty, nextHeartbeat(caughtUp = true).data().cordonedLogDirs().asScala.toSet)
+  }
+
+  @Test
   def testRegistrationIncludesDirs(): Unit = {
     val logDirs = util.Set.of(Uuid.fromString("ad5FLIeCTnaQdai5vOjeng"), Uuid.fromString("ybdzUKmYSLK6oiIpI6CPlw"))
     val ctx = new RegistrationTestContext(configProperties)

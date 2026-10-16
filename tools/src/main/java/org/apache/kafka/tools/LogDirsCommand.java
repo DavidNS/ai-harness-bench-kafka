@@ -120,6 +120,7 @@ public class LogDirsCommand {
             String logDir = entry.getKey();
             return new HashMap<String, Object>() {{
                     put("logDir", logDir);
+                    put("isCordoned", entry.getValue().isCordoned());
                     put("error", entry.getValue().error() != null ? entry.getValue().error().getClass().getName() : null);
                     put("partitions", fromReplicasInfoToPrintableRepresentation(
                             entry.getValue().replicaInfos().entrySet().stream().filter(entry -> {

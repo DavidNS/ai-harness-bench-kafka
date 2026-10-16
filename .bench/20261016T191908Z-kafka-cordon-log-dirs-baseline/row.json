@@ -1,0 +1,112 @@
+{
+ "schema_version": 2,
+ "run_id": "20261016T191908Z-kafka-cordon-log-dirs-baseline",
+ "case": "kafka-cordon-log-dirs",
+ "arm": "baseline",
+ "intent_version": 2,
+ "input_kind": "us",
+ "model": "claude-sonnet-5-5",
+ "started_at": "20261016T191908Z",
+ "fixture_sha": "e31ae3ebfc1ff7c25b9059923560c6ce39cf39ae",
+ "container": "eclipse-temurin:17-jdk",
+ "wall_seconds": 5680.8,
+ "files": [
+  "clients/src/main/java/org/apache/kafka/clients/admin/KafkaAdminClient.java",
+  "clients/src/main/java/org/apache/kafka/clients/admin/LogDirDescription.java",
+  "clients/src/main/resources/common/message/BrokerHeartbeatRequest.json",
+  "clients/src/main/resources/common/message/BrokerHeartbeatResponse.json",
+  "clients/src/main/resources/common/message/DescribeLogDirsRequest.json",
+  "clients/src/main/resources/common/message/DescribeLogDirsResponse.json",
+  "core/src/main/scala/kafka/log/LogManager.scala",
+  "core/src/main/scala/kafka/server/BrokerServer.scala",
+  "core/src/main/scala/kafka/server/ConfigAdminManager.scala",
+  "core/src/main/scala/kafka/server/DynamicBrokerConfig.scala",
+  "core/src/main/scala/kafka/server/KafkaApis.scala",
+  "core/src/main/scala/kafka/server/ReplicaManager.scala",
+  "core/src/test/scala/unit/kafka/log/LogManagerTest.scala",
+  "core/src/test/scala/unit/kafka/server/BrokerLifecycleManagerTest.scala",
+  "core/src/test/scala/unit/kafka/server/ConfigAdminManagerTest.scala",
+  "core/src/test/scala/unit/kafka/server/KafkaConfigTest.scala",
+  "metadata/src/main/java/org/apache/kafka/controller/ClusterControlManager.java",
+  "metadata/src/main/java/org/apache/kafka/controller/ReplicationControlManager.java",
+  "metadata/src/main/java/org/apache/kafka/image/ClusterDelta.java",
+  "metadata/src/main/java/org/apache/kafka/metadata/BrokerRegistration.java",
+  "metadata/src/main/resources/common/metadata/BrokerRegistrationChangeRecord.json",
+  "metadata/src/test/java/org/apache/kafka/controller/ReplicationControlManagerTest.java",
+  "metadata/src/test/java/org/apache/kafka/metadata/BrokerRegistrationTest.java",
+  "server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java",
+  "server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java",
+  "server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java",
+  "server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java",
+  "server/src/main/java/org/apache/kafka/server/config/AbstractKafkaConfig.java",
+  "server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java",
+  "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java",
+  "storage/src/main/java/org/apache/kafka/storage/internals/log/LogConfig.java",
+  "tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java"
+ ],
+ "shortstat": "32 files changed, 1090 insertions(+), 28 deletions(-)",
+ "diff_lines": 1846,
+ "judge": {
+  "ok": false,
+  "fail_to_pass_ok": false,
+  "pass_to_pass_ok": true,
+  "hidden_files": [
+   "tests.patch"
+  ],
+  "baseline_failures": [
+   "org.apache.kafka.server.LogManagerIntegrationTest.testIOExceptionOnLogSegmentCloseResultsInRecovery [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER)"
+  ],
+  "new_failures": [],
+  "hidden": {
+   "target": "org.apache.kafka.server.CordonedLogDirsIntegrationTest",
+   "exit_code": 1,
+   "passed": 6,
+   "failed": 4,
+   "errors": 0,
+   "skipped": 0,
+   "summary": "6 passed, 4 failed, 0 errors, 0 skipped (gradle exit 1)",
+   "output_tail": "INTEXT,ControllerListenerName=ListenerName(CONTROLLER) FAILED\n    org.opentest4j.AssertionFailedError: Expected java.util.concurrent.ExecutionException to be thrown, but nothing was thrown.\n        at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:152)\n        at app//org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:73)\n        at app//org.junit.jupiter.api.AssertThrows.assertThrows(AssertThrows.java:35)\n        at app//org.junit.jupiter.api.Assertions.assertThrows(Assertions.java:3128)\n        at app//org.apache.kafka.server.CordonedLogDirsIntegrationTest.testFeatureNotEnabled(CordonedLogDirsIntegrationTest.java:104)\n        at app//org.apache.kafka.server.CordonedLogDirsIntegrationTest.testFeatureNotEnabled(CordonedLogDirsIntegrationTest.java:83)\n\nGradle Test Run :server:test > Gradle Test Executor 38 > CordonedLogDirsIntegrationTest > testStaticCordonUncordonLogDirs() > testStaticCordonUncordonLogDirs [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 38 > CordonedLogDirsIntegrationTest > testStaticCordonUncordonLogDirs() > testStaticCordonUncordonLogDirs [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 38 > CordonedLogDirsIntegrationTest > testCordonUncordonLogDirs() > testCordonUncordonLogDirs [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 38 > CordonedLogDirsIntegrationTest > testCordonUncordonLogDirs() > testCordonUncordonLogDirs [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 38 > CordonedLogDirsIntegrationTest > testReassignWithCordonedLogDirs() > testReassignWithCordonedLogDirs [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 38 > CordonedLogDirsIntegrationTest > testReassignWithCordonedLogDirs() > testReassignWithCordonedLogDirs [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED\n\n> Task :server:test FAILED\n> Task :server:copyTestXml SKIPPED\n\n[Incubating] Problems report is available at: file:///targets/20261016T191908Z-kafka-cordon-log-dirs-baseline/build/reports/problems/problems-report.html\n\nDeprecated Gradle features were used in this build, making it incompatible with Gradle 10.\n\nYou can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.\n\nFor more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.\n72 actionable tasks: 3 executed, 69 up-to-date\n\n10 tests completed, 4 failed\n\nFAILURE: Build failed with an exception.\n\n* What went wrong:\nExecution failed for task ':server:test'.\n> There were failing tests. See the report at: file:///targets/20261016T191908Z-kafka-cordon-log-dirs-baseline/server/build/reports/tests/test/index.html\n\nBUILD FAILED in 2m 8s\n"
+  },
+  "suite": {
+   "target": ":server",
+   "exit_code": 1,
+   "passed": 409,
+   "failed": 5,
+   "errors": 0,
+   "skipped": 0,
+   "summary": "409 passed, 5 failed, 0 errors, 0 skipped (gradle exit 1)",
+   "output_tail": "adle Test Executor 40 > LinuxIoMetricsCollectorTest > testReadProcFile() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > LinuxIoMetricsCollectorTest > testUnableToReadNonexistentProcFile() PASSED\n\n\n> Task :server:test\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ClientSensorsTest > testConstructorThrowsExceptionWhenThrottleTimeSensorIsNull() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ClientSensorsTest > testConstructorWithEmptyMap() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ClientSensorsTest > testConstructorPreservesInputOrder() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ClientSensorsTest > testConstructorThrowsExceptionWhenQuotaSensorIsNull() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ClientSensorsTest > testConstructorThrowsExceptionWhenBothSensorsAreNull() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ClientSensorsTest > testConstructorWithValidParameters() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > DelayedShareFetchKeyTest > testDelayedShareFetchEqualsAndHashcode() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testMaybeCompleteWithExceptionPartialFailure() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testMaybeCompleteWithPartialErroneousTopicPartitions() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testFilterErroneousTopicPartitions() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testMaybeCompleteWithException() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testMaybeCompleteWithExceptionWithExistingErroneousTopicPartition() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testErrorInAllPartitionsWithMultipleTopicIdPartitions() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testDontCacheAnyData() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testMaybeCompleteWithErroneousTopicPartitions() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareFetchTest > testErrorInAllPartitions() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareSessionTest > testPartitionsToLogStringEmpty() PASSED\n\nGradle Test Run :server:test > Gradle Test Executor 40 > ShareSessionTest > testPartitionsToLogString() PASSED\n\n> Task :server:test FAILED\n> Task :server:copyTestXml SKIPPED\n\n[Incubating] Problems report is available at: file:///targets/20261016T191908Z-kafka-cordon-log-dirs-baseline/build/reports/problems/problems-report.html\n\nDeprecated Gradle features were used in this build, making it incompatible with Gradle 10.\n\nYou can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.\n\nFor more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.\n72 actionable tasks: 2 executed, 70 up-to-date\nOpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended\nOpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended\nOpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended\nOpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended\n\n414 tests completed, 5 failed\n\nFAILURE: Build failed with an exception.\n\n* What went wrong:\nExecution failed for task ':server:test'.\n> There were failing tests. See the report at: file:///targets/20261016T191908Z-kafka-cordon-log-dirs-baseline/server/build/reports/tests/test/index.html\n\nBUILD FAILED in 6m 29s\n"
+  }
+ },
+ "arm_report": {
+  "exit": 0,
+  "usage": {
+   "cost_usd": 3.7125271,
+   "num_turns": 1,
+   "duration_ms": 2018,
+   "duration_api_ms": 666096,
+   "input_tokens": 214,
+   "output_tokens": 92805,
+   "cache_read_input_tokens": 17790051,
+   "cache_creation_input_tokens": 251261,
+   "wall_ms": 5680796
+  },
+  "sessions": 1,
+  "permission_denials": 0,
+  "transcript": "transcript.jsonl",
+  "result": "That notification is the wait-for-results task finishing. I'd already read its output (the re-run exited 0), so there's nothing new. The summary above stands.",
+  "stderr": ""
+ },
+ "usage": {
+  "cost_usd": 3.7125271,
+  "num_turns": 1,
+  "duration_ms": 2018,
+  "duration_api_ms": 666096,
+  "input_tokens": 214,
+  "output_tokens": 92805,
+  "cache_read_input_tokens": 17790051,
+  "cache_creation_input_tokens": 251261,
+  "wall_ms": 5680796
+ },
+ "sessions": 1
+}

@@ -41,6 +41,7 @@ import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.protocol.Errors.{INVALID_REQUEST, NONE}
 import org.apache.kafka.common.requests.ApiError
 import org.apache.kafka.metadata.MockConfigRepository
+import org.apache.kafka.server.common.MetadataVersion
 import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertTrue}
 import org.junit.jupiter.api.{Assertions, Test}
 import org.slf4j.LoggerFactory
@@ -296,6 +297,52 @@ class ConfigAdminManagerTest {
         setResources(new IAlterConfigsResourceCollection(util.Arrays.asList(
           brokerLogger2).iterator())),
         (_, _) => true))
+  }
+
+  private def cordonedLogDirsIncremental(brokerId: Int, value: String, opType: OpType = OpType.SET): IAlterConfigsResource =
+    new IAlterConfigsResource().
+      setResourceName(brokerId.toString).
+      setResourceType(BROKER.id()).
+      setConfigs(new IAlterableConfigCollection(
+        util.Arrays.asList(new IAlterableConfig().setName("cordoned.log.dirs").
+          setValue(value).
+          setConfigOperation(opType.id())).iterator()))
+
+  private def preprocessCordoned(
+    manager: ConfigAdminManager,
+    resource: IAlterConfigsResource
+  ): ApiError = {
+    manager.preprocess(new IncrementalAlterConfigsRequestData().
+      setResources(new IAlterConfigsResourceCollection(util.Arrays.asList(resource).iterator())),
+      (_, _) => true).get(resource)
+  }
+
+  @Test
+  def testCordonedLogDirsRequireMetadataVersion(): Unit = {
+    val config = new KafkaConfig(TestUtils.createBrokerConfig(nodeId = 1))
+    val logDir = config.logDirs.get(0)
+    val unsupported = new ConfigAdminManager(1, config, new MockConfigRepository(), () => MetadataVersion.IBP_4_2_IV1)
+    val error = preprocessCordoned(unsupported, cordonedLogDirsIncremental(1, logDir))
+    assertEquals(Errors.INVALID_CONFIG, error.error())
+
+    // Removing the config is always fine
+    assertEquals(Errors.NONE,
+      preprocessCordoned(unsupported, cordonedLogDirsIncremental(1, null, OpType.DELETE)).error())
+
+    val supported = new ConfigAdminManager(1, config, new MockConfigRepository(), () => MetadataVersion.IBP_4_3_IV0)
+    assertEquals(Errors.NONE, preprocessCordoned(supported, cordonedLogDirsIncremental(1, logDir)).error())
+    assertEquals(Errors.NONE, preprocessCordoned(supported, cordonedLogDirsIncremental(1, "*")).error())
+  }
+
+  @Test
+  def testCordonedLogDirsMustBeLogDirsOfTheBroker(): Unit = {
+    val config = new KafkaConfig(TestUtils.createBrokerConfig(nodeId = 1))
+    val manager = new ConfigAdminManager(1, config, new MockConfigRepository(), () => MetadataVersion.IBP_4_3_IV0)
+    val error = preprocessCordoned(manager, cordonedLogDirsIncremental(1, config.logDirs.get(0) + ",/not/a/log/dir"))
+    assertEquals(Errors.INVALID_CONFIG, error.error())
+
+    // The log directories of other brokers are not known, so they can't be checked
+    assertEquals(Errors.NONE, preprocessCordoned(manager, cordonedLogDirsIncremental(2, "/dir/of/broker/2")).error())
   }
 
   @Test

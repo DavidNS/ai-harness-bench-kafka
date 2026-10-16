@@ -61,6 +61,7 @@ public class DynamicBrokerConfig {
 
     private static final Set<String> PER_BROKER_CONFIGS = Stream.of(
             DYNAMIC_SECURITY_CONFIGS,
+            DynamicCordonedLogDirsConfig.RECONFIGURABLE_CONFIGS,
             DynamicListenerConfig.RECONFIGURABLE_CONFIGS)
         .flatMap(Collection::stream)
         .filter(c -> !CLUSTER_LEVEL_LISTENER_CONFIGS.contains(c))
@@ -74,6 +75,7 @@ public class DynamicBrokerConfig {
             List.of(MetricConfigs.METRIC_REPORTER_CLASSES_CONFIG),
             DynamicListenerConfig.RECONFIGURABLE_CONFIGS,
             SocketServer.RECONFIGURABLE_CONFIGS,
+            DynamicCordonedLogDirsConfig.RECONFIGURABLE_CONFIGS,
             DYNAMIC_PRODUCER_STATE_MANAGER_CONFIGS,
             DynamicRemoteLogConfig.RECONFIGURABLE_CONFIGS,
             DynamicReplicationConfig.RECONFIGURABLE_CONFIGS,
@@ -207,6 +209,13 @@ public class DynamicBrokerConfig {
          */
         public static final Set<String> RECONFIGURABLE_CONFIGS = Set.copyOf(
                 ServerTopicConfigSynonyms.TOPIC_CONFIG_SYNONYMS.values());
+    }
+
+    public static class DynamicCordonedLogDirsConfig {
+        /**
+         * The cordoned log directories are specific to each broker, so they are only valid as a per-broker config.
+         */
+        public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG);
     }
 
     public static class DynamicListenerConfig {

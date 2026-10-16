@@ -117,7 +117,7 @@ class KafkaApis(val requestChannel: RequestChannel,
   val authHelper = new AuthHelper(authorizerPlugin)
   val requestHelper = new RequestHandlerHelper(requestChannel, quotas, time)
   val aclApis = new AclApis(authHelper, authorizerPlugin, requestHelper, ProcessRole.BrokerRole, config)
-  val configManager = new ConfigAdminManager(brokerId, config, configRepository)
+  val configManager = new ConfigAdminManager(brokerId, config, configRepository, () => metadataCache.metadataVersion())
   val describeTopicPartitionsRequestHandler = new DescribeTopicPartitionsRequestHandler(
     metadataCache, authHelper, config)
 

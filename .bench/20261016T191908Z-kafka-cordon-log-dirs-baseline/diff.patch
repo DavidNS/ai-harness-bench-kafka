@@ -1,0 +1,1846 @@
+diff --git a/clients/src/main/java/org/apache/kafka/clients/admin/KafkaAdminClient.java b/clients/src/main/java/org/apache/kafka/clients/admin/KafkaAdminClient.java
+index a80c860de5..85f1e87459 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/admin/KafkaAdminClient.java
++++ b/clients/src/main/java/org/apache/kafka/clients/admin/KafkaAdminClient.java
+@@ -3054,7 +3054,8 @@ public class KafkaAdminClient extends AdminClient {
+                 Errors.forCode(logDirResult.errorCode()).exception(),
+                 replicaInfoMap,
+                 logDirResult.totalBytes(),
+-                logDirResult.usableBytes()));
++                logDirResult.usableBytes(),
++                logDirResult.isCordoned()));
+         }
+         return result;
+     }
+diff --git a/clients/src/main/java/org/apache/kafka/clients/admin/LogDirDescription.java b/clients/src/main/java/org/apache/kafka/clients/admin/LogDirDescription.java
+index 340e88db16..83be954ab5 100644
+--- a/clients/src/main/java/org/apache/kafka/clients/admin/LogDirDescription.java
++++ b/clients/src/main/java/org/apache/kafka/clients/admin/LogDirDescription.java
+@@ -33,12 +33,24 @@ public class LogDirDescription {
+     private final ApiException error;
+     private final OptionalLong totalBytes;
+     private final OptionalLong usableBytes;
++    private final boolean isCordoned;
+ 
+     public LogDirDescription(ApiException error, Map<TopicPartition, ReplicaInfo> replicaInfos) {
+         this(error, replicaInfos, UNKNOWN_VOLUME_BYTES, UNKNOWN_VOLUME_BYTES);
+     }
+ 
+     public LogDirDescription(ApiException error, Map<TopicPartition, ReplicaInfo> replicaInfos, long totalBytes, long usableBytes) {
++        this(error, replicaInfos, totalBytes, usableBytes, false);
++    }
++
++    public LogDirDescription(
++        ApiException error,
++        Map<TopicPartition, ReplicaInfo> replicaInfos,
++        long totalBytes,
++        long usableBytes,
++        boolean isCordoned
++    ) {
++        this.isCordoned = isCordoned;
+         this.error = error;
+         this.replicaInfos = replicaInfos;
+         this.totalBytes = (totalBytes == UNKNOWN_VOLUME_BYTES) ? OptionalLong.empty() : OptionalLong.of(totalBytes);
+@@ -82,6 +94,14 @@ public class LogDirDescription {
+         return usableBytes;
+     }
+ 
++    /**
++     * Whether this log directory is cordoned. No new partitions are placed on a cordoned log directory,
++     * but the partitions it already hosts keep being served.
++     */
++    public boolean isCordoned() {
++        return isCordoned;
++    }
++
+     @Override
+     public String toString() {
+         return "LogDirDescription(" +
+@@ -89,6 +109,7 @@ public class LogDirDescription {
+                 ", error=" + error +
+                 ", totalBytes=" + totalBytes +
+                 ", usableBytes=" + usableBytes +
++                ", isCordoned=" + isCordoned +
+                 ')';
+     }
+ }
+diff --git a/clients/src/main/resources/common/message/BrokerHeartbeatRequest.json b/clients/src/main/resources/common/message/BrokerHeartbeatRequest.json
+index 8f574b41fc..ecfe5d8bb0 100644
+--- a/clients/src/main/resources/common/message/BrokerHeartbeatRequest.json
++++ b/clients/src/main/resources/common/message/BrokerHeartbeatRequest.json
+@@ -18,7 +18,7 @@
+   "type": "request",
+   "listeners": ["controller"],
+   "name": "BrokerHeartbeatRequest",
+-  "validVersions": "0-1",
++  "validVersions": "0-2",
+   "flexibleVersions": "0+",
+   "fields": [
+     { "name": "BrokerId", "type": "int32", "versions": "0+", "entityType": "brokerId",
+@@ -32,6 +32,9 @@
+     { "name": "WantShutDown", "type": "bool", "versions": "0+",
+       "about": "True if the broker wants to be shut down, false otherwise." },
+     { "name": "OfflineLogDirs", "type":  "[]uuid", "versions": "1+", "taggedVersions": "1+", "tag": 0,
+-      "about": "Log directories that failed and went offline." }
++      "about": "Log directories that failed and went offline." },
++    { "name": "CordonedLogDirs", "type": "[]uuid", "versions": "2+", "taggedVersions": "2+", "tag": 1,
++      "nullableVersions": "2+", "default": "null",
++      "about": "Log directories that are cordoned, or null if the broker is not reporting its cordoned log directories." }
+   ]
+ }
+diff --git a/clients/src/main/resources/common/message/BrokerHeartbeatResponse.json b/clients/src/main/resources/common/message/BrokerHeartbeatResponse.json
+index 9956daf1ff..071f247785 100644
+--- a/clients/src/main/resources/common/message/BrokerHeartbeatResponse.json
++++ b/clients/src/main/resources/common/message/BrokerHeartbeatResponse.json
+@@ -17,7 +17,7 @@
+   "apiKey": 63,
+   "type": "response",
+   "name": "BrokerHeartbeatResponse",
+-  "validVersions": "0-1",
++  "validVersions": "0-2",
+   "flexibleVersions": "0+",
+   "fields": [
+     { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+",
+diff --git a/clients/src/main/resources/common/message/DescribeLogDirsRequest.json b/clients/src/main/resources/common/message/DescribeLogDirsRequest.json
+index 4f3bfa2c58..d6f3f6c5e6 100644
+--- a/clients/src/main/resources/common/message/DescribeLogDirsRequest.json
++++ b/clients/src/main/resources/common/message/DescribeLogDirsRequest.json
+@@ -23,7 +23,8 @@
+   // Version 2 is the first flexible version.
+   // Version 3 is the same as version 2 (new field in response).
+   // Version 4 is the same as version 2 (new fields in response).
+-  "validVersions": "1-4",
++  // Version 5 is the same as version 2 (new field in response).
++  "validVersions": "1-5",
+   "flexibleVersions": "2+",
+   "fields": [
+     { "name": "Topics", "type": "[]DescribableLogDirTopic", "versions": "0+", "nullableVersions": "0+",
+diff --git a/clients/src/main/resources/common/message/DescribeLogDirsResponse.json b/clients/src/main/resources/common/message/DescribeLogDirsResponse.json
+index 725d1ad337..d6947c3c2f 100644
+--- a/clients/src/main/resources/common/message/DescribeLogDirsResponse.json
++++ b/clients/src/main/resources/common/message/DescribeLogDirsResponse.json
+@@ -22,7 +22,8 @@
+   // Version 2 is the first flexible version.
+   // Version 3 adds the top-level ErrorCode field
+   // Version 4 adds the TotalBytes and UsableBytes fields
+-  "validVersions": "1-4",
++  // Version 5 adds the IsCordoned field (KIP-1066)
++  "validVersions": "1-5",
+   "flexibleVersions": "2+",
+   "fields": [
+     { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+",
+@@ -55,6 +56,9 @@
+       },
+       { "name": "UsableBytes", "type": "int64", "versions": "4+", "ignorable": true, "default": "-1",
+         "about": "The usable size in bytes of the volume the log directory is in. This value does not include the size of data stored in remote storage."
++      },
++      { "name": "IsCordoned", "type": "bool", "versions": "5+", "ignorable": true, "default": "false",
++        "about": "True if this log directory is cordoned."
+       }
+     ]}
+   ]
+diff --git a/core/src/main/scala/kafka/log/LogManager.scala b/core/src/main/scala/kafka/log/LogManager.scala
+index efdab2a0f3..387e69a1ca 100755
+--- a/core/src/main/scala/kafka/log/LogManager.scala
++++ b/core/src/main/scala/kafka/log/LogManager.scala
+@@ -35,6 +35,7 @@ import scala.collection.mutable.ArrayBuffer
+ import scala.util.{Failure, Success, Try}
+ import org.apache.kafka.image.TopicsImage
+ import org.apache.kafka.metadata.ConfigRepository
++import org.apache.kafka.server.config.ServerLogConfigs
+ import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, PropertiesUtils}
+ 
+ import java.util.{Collections, Optional, OptionalLong, Properties}
+@@ -153,12 +154,66 @@ class LogManager(logDirs: Seq[File],
+   @volatile private var _cleaner: LogCleaner = _
+   private[kafka] def cleaner: LogCleaner = _cleaner
+ 
++  // Absolute paths of the log directories that are configured as cordoned (KIP-1066). Only directories listed in
++  // log.dirs can be cordoned. Use cordonedLogDirs to get the directories that are in effect.
++  @volatile private var configuredCordonedLogDirs: Set[String] = Set.empty
++
++  // Cordoning requires a minimum metadata version. Until the broker knows that it is supported, the configuration
++  // has no effect. This is set by the broker once the metadata cache is available.
++  @volatile var cordonedLogDirsSupported: () => Boolean = () => true
++
++  // Invoked after the set of configured cordoned directories changed
++  @volatile var cordonedLogDirsListener: () => Unit = () => ()
++
++  /**
++   * The absolute paths of the log directories which are cordoned. New partitions are not created in these directories.
++   */
++  def cordonedLogDirs: Set[String] = if (cordonedLogDirsSupported()) configuredCordonedLogDirs else Set.empty
++
++  def isCordoned(dir: String): Boolean = cordonedLogDirs.contains(new File(dir).getAbsolutePath)
++
++  /**
++   * The directory IDs of the cordoned log directories.
++   */
++  def cordonedDirectoryIds: Predef.Set[Uuid] = {
++    val cordoned = cordonedLogDirs
++    directoryIds.collect { case (dir, id) if cordoned.contains(dir) => id }.toSet
++  }
++
++  /**
++   * Update the log directories that are cordoned.
++   *
++   * @param entries The values of cordoned.log.dirs. "*" cordons all of the log directories.
++   */
++  def updateCordonedLogDirs(entries: Seq[String]): Unit = {
++    val allDirs = logDirs.map(_.getAbsolutePath).toSet
++    val newCordoned = if (entries.contains(ServerLogConfigs.CORDONED_LOG_DIRS_ALL)) {
++      allDirs
++    } else {
++      entries.map(entry => new File(entry).getAbsolutePath).filter { dir =>
++        val known = allDirs.contains(dir)
++        if (!known)
++          warn(s"Ignoring cordoned log directory $dir since it is not one of the log directories $allDirs")
++        known
++      }.toSet
++    }
++    if (newCordoned != configuredCordonedLogDirs) {
++      info(s"Cordoned log directories changed from $configuredCordonedLogDirs to $newCordoned")
++      configuredCordonedLogDirs = newCordoned
++      cordonedLogDirsListener()
++    }
++  }
++
+   metricsGroup.newGauge("OfflineLogDirectoryCount", () => offlineLogDirs.size)
++  metricsGroup.newGauge("CordonedLogDirectoryCount", () => cordonedLogDirs.size)
+ 
+   for (dir <- logDirs) {
+     metricsGroup.newGauge("LogDirectoryOffline",
+       () => if (_liveLogDirs.contains(dir)) 0 else 1,
+       Map("logDirectory" -> dir.getAbsolutePath).asJava)
++    metricsGroup.newGauge("LogDirectoryCordoned",
++      () => if (cordonedLogDirs.contains(dir.getAbsolutePath)) 1 else 0,
++      Map("logDirectory" -> dir.getAbsolutePath).asJava)
+   }
+ 
+   /**
+@@ -647,8 +702,10 @@ class LogManager(logDirs: Seq[File],
+     info("Shutting down.")
+ 
+     metricsGroup.removeMetric("OfflineLogDirectoryCount")
++    metricsGroup.removeMetric("CordonedLogDirectoryCount")
+     for (dir <- logDirs) {
+       metricsGroup.removeMetric("LogDirectoryOffline", Map("logDirectory" -> dir.getAbsolutePath).asJava)
++      metricsGroup.removeMetric("LogDirectoryCordoned", Map("logDirectory" -> dir.getAbsolutePath).asJava)
+     }
+ 
+     val threadPools = ArrayBuffer.empty[ExecutorService]
+@@ -1021,7 +1078,7 @@ class LogManager(logDirs: Seq[File],
+           throw new KafkaStorageException(s"Can not create log for $topicPartition because log directories ${offlineLogDirs.mkString(",")} are offline")
+ 
+         val logDirs: List[File] = {
+-          val preferredLogDir = targetLogDirectoryId.filterNot(Seq(DirectoryId.UNASSIGNED,DirectoryId.LOST).contains) match {
++          val preferredLogDirCandidate = targetLogDirectoryId.filterNot(Seq(DirectoryId.UNASSIGNED,DirectoryId.LOST).contains) match {
+             case Some(targetId) if !preferredLogDirs.containsKey(topicPartition) =>
+               // If partition is configured with both targetLogDirectoryId and preferredLogDirs, then
+               // preferredLogDirs will be respected, otherwise targetLogDirectoryId will be respected
+@@ -1030,6 +1087,16 @@ class LogManager(logDirs: Seq[File],
+               preferredLogDirs.get(topicPartition)
+           }
+ 
++          // The controller may suggest a cordoned directory, e.g. if it didn't know about the cordon yet. A new
++          // replica is never placed in a cordoned directory. Future logs are only created for a directory the user
++          // explicitly asked for, which is validated when the request to move the replica is handled.
++          val preferredLogDir = if (!isFuture && preferredLogDirCandidate != null && isCordoned(preferredLogDirCandidate)) {
++            info(s"Not creating the log for $topicPartition in the cordoned log directory $preferredLogDirCandidate")
++            null
++          } else {
++            preferredLogDirCandidate
++          }
++
+           if (isFuture) {
+             if (preferredLogDir == null)
+               throw new IllegalStateException(s"Can not create the future log for $topicPartition without having a preferred log directory")
+@@ -1367,13 +1434,26 @@ class LogManager(logDirs: Seq[File],
+    * data directories by fewest partitions.
+    */
+   private def nextLogDirs(): List[File] = {
+-    if (_liveLogDirs.size == 1) {
+-      List(_liveLogDirs.peek())
++    // Cordoned directories are skipped. If all of the live directories are cordoned, the controller should not have
++    // assigned the partition to this broker. Rather than failing the replica, use the live directories.
++    val cordoned = cordonedLogDirs
++    val candidates = {
++      val uncordoned = _liveLogDirs.asScala.filterNot(dir => cordoned.contains(dir.getAbsolutePath)).toList
++      if (uncordoned.isEmpty) {
++        if (cordoned.nonEmpty)
++          warn(s"All live log directories are cordoned, creating the log in a cordoned log directory")
++        _liveLogDirs.asScala.toList
++      } else {
++        uncordoned
++      }
++    }
++    if (candidates.size == 1) {
++      List(candidates.head)
+     } else {
+       // count the number of logs in each parent directory (including 0 for empty directories
+       val logCounts = allLogs.groupBy(_.parentDir).map { case (parent, logs) => parent -> logs.size }
+-      val zeros = _liveLogDirs.asScala.map(dir => (dir.getPath, 0)).toMap
+-      val dirCounts = (zeros ++ logCounts).toBuffer
++      val zeros = candidates.map(dir => (dir.getPath, 0)).toMap
++      val dirCounts = (zeros ++ logCounts.filter { case (parent, _) => zeros.contains(parent) }).toBuffer
+ 
+       // choose the directory with the least logs in it
+       dirCounts.sortBy(_._2).map {
+@@ -1545,7 +1625,7 @@ object LogManager {
+     val cleanerConfig = new CleanerConfig(config)
+     val transactionLogConfig = new TransactionLogConfig(config)
+ 
+-    new LogManager(logDirs = config.logDirs.asScala.map(new File(_).getAbsoluteFile),
++    val logManager = new LogManager(logDirs = config.logDirs.asScala.map(new File(_).getAbsoluteFile),
+       initialOfflineDirs = initialOfflineDirs.map(new File(_).getAbsoluteFile),
+       configRepository = configRepository,
+       initialDefaultConfig = defaultLogConfig,
+@@ -1564,5 +1644,7 @@ object LogManager {
+       time = time,
+       remoteStorageSystemEnable = config.remoteLogManagerConfig.isRemoteStorageSystemEnabled,
+       initialTaskDelayMs = config.logInitialTaskDelayMs)
++    logManager.updateCordonedLogDirs(config.cordonedLogDirs.asScala)
++    logManager
+   }
+ }
+diff --git a/core/src/main/scala/kafka/server/BrokerServer.scala b/core/src/main/scala/kafka/server/BrokerServer.scala
+index 977eca37a8..d01c5f0946 100644
+--- a/core/src/main/scala/kafka/server/BrokerServer.scala
++++ b/core/src/main/scala/kafka/server/BrokerServer.scala
+@@ -224,6 +224,12 @@ class BrokerServer(
+         logManager.directoryIdsSet.asJava,
+         () => new Thread(() => shutdown(), "kafka-shutdown-thread").start())
+ 
++      // Cordoning log directories requires a minimum metadata version. The cordoned directories are reported to
++      // the controller in the broker heartbeats.
++      logManager.cordonedLogDirsSupported = () => metadataCache.metadataVersion().isCordonedLogDirsSupported
++      lifecycleManager.setCordonedLogDirsSupplier(() => logManager.cordonedDirectoryIds.asJava)
++      logManager.cordonedLogDirsListener = () => lifecycleManager.handleCordonedLogDirsChange()
++
+       // Enable delegation token cache for all SCRAM mechanisms to simplify dynamic update.
+       // This keeps the cache up-to-date if new SCRAM mechanisms are enabled dynamically.
+       tokenCache = new DelegationTokenCache(ScramMechanism.mechanismNames)
+diff --git a/core/src/main/scala/kafka/server/ConfigAdminManager.scala b/core/src/main/scala/kafka/server/ConfigAdminManager.scala
+index f86af7d37a..a13c7f8577 100644
+--- a/core/src/main/scala/kafka/server/ConfigAdminManager.scala
++++ b/core/src/main/scala/kafka/server/ConfigAdminManager.scala
+@@ -18,6 +18,7 @@ package kafka.server
+ 
+ import kafka.server.logger.RuntimeLoggerManager
+ 
++import java.io.File
+ import java.util
+ import java.util.Properties
+ import kafka.utils._
+@@ -36,6 +37,8 @@ import org.apache.kafka.common.protocol.Errors.{INVALID_REQUEST, UNKNOWN_SERVER_
+ import org.apache.kafka.common.requests.ApiError
+ import org.apache.kafka.common.resource.{Resource, ResourceType}
+ import org.apache.kafka.metadata.ConfigRepository
++import org.apache.kafka.server.common.MetadataVersion
++import org.apache.kafka.server.config.ServerLogConfigs
+ import org.slf4j.{Logger, LoggerFactory}
+ 
+ import scala.collection.{Map, Seq}
+@@ -76,7 +79,8 @@ import scala.jdk.CollectionConverters._
+  */
+ class ConfigAdminManager(nodeId: Int,
+                          conf: KafkaConfig,
+-                         configRepository: ConfigRepository) extends Logging {
++                         configRepository: ConfigRepository,
++                         metadataVersionSupplier: () => MetadataVersion = () => MetadataVersion.latestTesting()) extends Logging {
+   import ConfigAdminManager._
+ 
+   this.logIdent = "[ConfigAdminManager[nodeId=" + nodeId + "]: "
+@@ -188,6 +192,7 @@ class ConfigAdminManager(nodeId: Int,
+     configResource: ConfigResource
+   ): Unit = {
+     try {
++      validateCordonedLogDirs(props, configResource)
+       conf.dynamicConfig.validate(props, configResource.name().nonEmpty)
+     } catch {
+       case e: ApiException => throw e
+@@ -199,6 +204,34 @@ class ConfigAdminManager(nodeId: Int,
+     }
+  }
+ 
++  /**
++   * The cordoned.log.dirs config requires metadata version 4.3-IV0. In addition, if the change is for this
++   * broker, its entries must be directories of this broker. The log directories of other brokers are not known here.
++   */
++  private def validateCordonedLogDirs(
++    props: Properties,
++    configResource: ConfigResource
++  ): Unit = {
++    val key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG
++    val newValue = Option(props.getProperty(key)).map(_.trim).getOrElse("")
++    if (newValue.isEmpty) return
++    val oldValue = Option(configRepository.config(configResource).getProperty(key)).map(_.trim).getOrElse("")
++    if (newValue == oldValue) return
++    if (!metadataVersionSupplier().isCordonedLogDirsSupported) {
++      throw new InvalidConfigurationException(s"Config $key requires metadata version " +
++        s"${MetadataVersion.IBP_4_3_IV0} or higher, but the current metadata version is ${metadataVersionSupplier()}.")
++    }
++    if (configResource.name() == nodeId.toString) {
++      val knownDirs = conf.logDirs.asScala.map(new File(_).getAbsolutePath).toSet
++      newValue.split(",").map(_.trim).filter(_.nonEmpty).foreach { entry =>
++        if (entry != ServerLogConfigs.CORDONED_LOG_DIRS_ALL && !knownDirs.contains(new File(entry).getAbsolutePath)) {
++          throw new InvalidConfigurationException(s"Config $key contains $entry, which is not one of the " +
++            s"log directories of broker $nodeId: ${conf.logDirs.asScala.mkString(",")}")
++        }
++      }
++    }
++  }
++
+   /**
+    * Preprocess a legacy configuration operation on the broker.
+    *
+diff --git a/core/src/main/scala/kafka/server/DynamicBrokerConfig.scala b/core/src/main/scala/kafka/server/DynamicBrokerConfig.scala
+index a467f18ace..ace6b5b0c8 100755
+--- a/core/src/main/scala/kafka/server/DynamicBrokerConfig.scala
++++ b/core/src/main/scala/kafka/server/DynamicBrokerConfig.scala
+@@ -196,6 +196,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging
+ 
+     addBrokerReconfigurable(new BrokerDynamicThreadPool(kafkaServer))
+     addBrokerReconfigurable(new DynamicLogConfig(kafkaServer.logManager))
++    addBrokerReconfigurable(new DynamicCordonedLogDirsConfig(kafkaServer.logManager))
+     addBrokerReconfigurable(new DynamicListenerConfig(kafkaServer))
+     addBrokerReconfigurable(kafkaServer.socketServer)
+     addBrokerReconfigurable(new DynamicProducerStateManagerConfig(kafkaServer.logManager.producerStateManagerConfig))
+@@ -948,6 +949,21 @@ class DynamicRemoteLogConfig(server: KafkaBroker) extends BrokerReconfigurable w
+   }
+ }
+ 
++class DynamicCordonedLogDirsConfig(logManager: LogManager) extends BrokerReconfigurable {
++  override def reconfigurableConfigs: util.Set[String] = {
++    JDynamicBrokerConfig.DynamicCordonedLogDirsConfig.RECONFIGURABLE_CONFIGS
++  }
++
++  override def validateReconfiguration(newConfig: KafkaConfig): Unit = {
++    // The entries can only be checked against the log directories of the broker that applies the config.
++    // Entries which are not log directories of this broker are ignored when the config is applied.
++  }
++
++  override def reconfigure(oldConfig: KafkaConfig, newConfig: KafkaConfig): Unit = {
++    logManager.updateCordonedLogDirs(newConfig.cordonedLogDirs.asScala)
++  }
++}
++
+ class DynamicReplicationConfig(server: KafkaBroker) extends BrokerReconfigurable with Logging {
+   override def reconfigurableConfigs: util.Set[String] = {
+     JDynamicBrokerConfig.DynamicReplicationConfig.RECONFIGURABLE_CONFIGS
+diff --git a/core/src/main/scala/kafka/server/KafkaApis.scala b/core/src/main/scala/kafka/server/KafkaApis.scala
+index 93b32a5019..02d6d8de03 100644
+--- a/core/src/main/scala/kafka/server/KafkaApis.scala
++++ b/core/src/main/scala/kafka/server/KafkaApis.scala
+@@ -117,7 +117,7 @@ class KafkaApis(val requestChannel: RequestChannel,
+   val authHelper = new AuthHelper(authorizerPlugin)
+   val requestHelper = new RequestHandlerHelper(requestChannel, quotas, time)
+   val aclApis = new AclApis(authHelper, authorizerPlugin, requestHelper, ProcessRole.BrokerRole, config)
+-  val configManager = new ConfigAdminManager(brokerId, config, configRepository)
++  val configManager = new ConfigAdminManager(brokerId, config, configRepository, () => metadataCache.metadataVersion())
+   val describeTopicPartitionsRequestHandler = new DescribeTopicPartitionsRequestHandler(
+     metadataCache, authHelper, config)
+ 
+diff --git a/core/src/main/scala/kafka/server/ReplicaManager.scala b/core/src/main/scala/kafka/server/ReplicaManager.scala
+index d2471b2ecd..07b9f28397 100644
+--- a/core/src/main/scala/kafka/server/ReplicaManager.scala
++++ b/core/src/main/scala/kafka/server/ReplicaManager.scala
+@@ -1117,6 +1117,8 @@ class ReplicaManager(val config: KafkaConfig,
+             throw new InvalidTopicException("The topic name is too long.")
+           if (!logManager.isLogDirOnline(destinationDir))
+             throw new KafkaStorageException(s"Log directory $destinationDir is offline")
++          if (logManager.isCordoned(destinationDir) && !logManager.getLog(topicPartition).exists(_.parentDir == new File(destinationDir).getAbsolutePath))
++            throw new InvalidReplicaAssignmentException(s"Log directory $destinationDir is cordoned")
+ 
+           getPartition(topicPartition) match {
+             case online: HostedPartition.Online[Partition] =>
+@@ -1171,6 +1173,7 @@ class ReplicaManager(val config: KafkaConfig,
+           case e@(_: InvalidTopicException |
+                   _: LogDirNotFoundException |
+                   _: ReplicaNotAvailableException |
++                  _: InvalidReplicaAssignmentException |
+                   _: KafkaStorageException) =>
+             warn(s"Unable to alter log dirs for $topicPartition", e)
+             (topicPartition, Errors.forException(e))
+@@ -1231,6 +1234,7 @@ class ReplicaManager(val config: KafkaConfig,
+           .setErrorCode(Errors.NONE.code)
+           .setTotalBytes(totalBytes)
+           .setUsableBytes(usableBytes)
++          .setIsCordoned(logManager.isCordoned(absolutePath))
+         describeLogDirsResult
+ 
+       } catch {
+diff --git a/core/src/test/scala/unit/kafka/log/LogManagerTest.scala b/core/src/test/scala/unit/kafka/log/LogManagerTest.scala
+index 7736f6736e..51926dfa37 100755
+--- a/core/src/test/scala/unit/kafka/log/LogManagerTest.scala
++++ b/core/src/test/scala/unit/kafka/log/LogManagerTest.scala
+@@ -40,6 +40,7 @@ import java.nio.file.attribute.PosixFilePermission
+ import java.util
+ import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+ import java.util.{Collections, Optional, OptionalLong, Properties}
++import org.apache.kafka.server.config.ServerLogConfigs
+ import org.apache.kafka.server.metrics.KafkaYammerMetrics
+ import org.apache.kafka.server.storage.log.FetchIsolation
+ import org.apache.kafka.server.util.{FileLock, KafkaScheduler, MockTime, Scheduler}
+@@ -609,6 +610,126 @@ class LogManagerTest {
+       initialTaskDelayMs = initialTaskDelayMs)
+   }
+ 
++  @Test
++  def testNewLogsAreNotCreatedInCordonedLogDirs(): Unit = {
++    val logDir1 = TestUtils.tempDir()
++    val logDir2 = TestUtils.tempDir()
++    val manager = createLogManager(Seq(logDir1, logDir2))
++    try {
++      manager.startup(Set.empty)
++      manager.updateCordonedLogDirs(Seq(logDir1.getAbsolutePath))
++      assertEquals(Set(logDir1.getAbsolutePath), manager.cordonedLogDirs)
++      assertTrue(manager.isCordoned(logDir1.getAbsolutePath))
++      assertFalse(manager.isCordoned(logDir2.getAbsolutePath))
++
++      for (partition <- 0 until 6) {
++        val log = manager.getOrCreateLog(new TopicPartition(name, partition), topicId = Optional.empty)
++        assertEquals(logDir2.getAbsolutePath, log.parentDir)
++      }
++
++      // The directory the controller suggested is ignored if it is cordoned.
++      val cordonedId = manager.directoryId(logDir1.getAbsolutePath).get
++      val log = manager.getOrCreateLog(new TopicPartition(name, 10), topicId = Optional.empty,
++        targetLogDirectoryId = Some(cordonedId))
++      assertEquals(logDir2.getAbsolutePath, log.parentDir)
++
++      // Uncordoning makes the directory a candidate again; it is the one with the fewest logs.
++      manager.updateCordonedLogDirs(Seq.empty)
++      assertEquals(Set.empty, manager.cordonedLogDirs)
++      val log2 = manager.getOrCreateLog(new TopicPartition(name, 11), topicId = Optional.empty)
++      assertEquals(logDir1.getAbsolutePath, log2.parentDir)
++    } finally {
++      manager.shutdown()
++      manager.liveLogDirs.foreach(Utils.delete)
++    }
++  }
++
++  @Test
++  def testExistingLogsKeepBeingServedFromCordonedLogDirs(): Unit = {
++    val logDir1 = TestUtils.tempDir()
++    val manager = createLogManager(Seq(logDir1))
++    try {
++      manager.startup(Set.empty)
++      val log = manager.getOrCreateLog(new TopicPartition(name, 0), topicId = Optional.empty)
++      manager.updateCordonedLogDirs(Seq("*"))
++      assertSame(log, manager.getLog(new TopicPartition(name, 0)).get)
++      assertSame(log, manager.getOrCreateLog(new TopicPartition(name, 0), topicId = Optional.empty))
++    } finally {
++      manager.shutdown()
++      manager.liveLogDirs.foreach(Utils.delete)
++    }
++  }
++
++  @Test
++  def testCordonAllLogDirsWithWildcard(): Unit = {
++    val logDir1 = TestUtils.tempDir()
++    val logDir2 = TestUtils.tempDir()
++    val manager = createLogManager(Seq(logDir1, logDir2))
++    try {
++      manager.updateCordonedLogDirs(Seq(ServerLogConfigs.CORDONED_LOG_DIRS_ALL))
++      assertEquals(Set(logDir1.getAbsolutePath, logDir2.getAbsolutePath), manager.cordonedLogDirs)
++      assertEquals(manager.directoryIdsSet, manager.cordonedDirectoryIds)
++
++      // Entries which are not log directories are ignored
++      manager.updateCordonedLogDirs(Seq(logDir2.getAbsolutePath, "/some/other/dir"))
++      assertEquals(Set(logDir2.getAbsolutePath), manager.cordonedLogDirs)
++      assertEquals(Set(manager.directoryId(logDir2.getAbsolutePath).get), manager.cordonedDirectoryIds)
++    } finally {
++      manager.shutdown()
++      manager.liveLogDirs.foreach(Utils.delete)
++    }
++  }
++
++  @Test
++  def testCordonedLogDirsHaveNoEffectIfNotSupported(): Unit = {
++    val logDir1 = TestUtils.tempDir()
++    val manager = createLogManager(Seq(logDir1))
++    try {
++      manager.cordonedLogDirsSupported = () => false
++      manager.updateCordonedLogDirs(Seq("*"))
++      assertEquals(Set.empty, manager.cordonedLogDirs)
++      assertFalse(manager.isCordoned(logDir1.getAbsolutePath))
++      assertEquals(Set.empty, manager.cordonedDirectoryIds)
++      manager.cordonedLogDirsSupported = () => true
++      assertEquals(Set(logDir1.getAbsolutePath), manager.cordonedLogDirs)
++    } finally {
++      manager.shutdown()
++      manager.liveLogDirs.foreach(Utils.delete)
++    }
++  }
++
++  @Test
++  def testCordonedLogDirsListenerAndMetrics(): Unit = {
++    // The metrics are registered by the first log manager that uses a name, which is the one created in setUp
++    var notifications = 0
++    logManager.cordonedLogDirsListener = () => notifications += 1
++
++    def gauge(name: String, dir: Option[File]): Int = {
++      KafkaYammerMetrics.defaultRegistry.allMetrics.asScala.collectFirst {
++        case (metricName, g: Gauge[_]) if metricName.getType == "LogManager" && metricName.getName == name &&
++          dir.forall(d => metricName.getMBeanName.contains(s"logDirectory=${d.getAbsolutePath}")) =>
++          g.value().asInstanceOf[Int]
++      }.getOrElse(throw new AssertionError(s"Metric $name not found"))
++    }
++
++    assertEquals(0, gauge("CordonedLogDirectoryCount", None))
++    assertEquals(0, gauge("LogDirectoryCordoned", Some(logDir)))
++
++    logManager.updateCordonedLogDirs(Seq(logDir.getAbsolutePath))
++    assertEquals(1, notifications)
++    assertEquals(1, gauge("CordonedLogDirectoryCount", None))
++    assertEquals(1, gauge("LogDirectoryCordoned", Some(logDir)))
++
++    // No notification if nothing changed
++    logManager.updateCordonedLogDirs(Seq(logDir.getAbsolutePath))
++    assertEquals(1, notifications)
++
++    logManager.updateCordonedLogDirs(Seq.empty)
++    assertEquals(2, notifications)
++    assertEquals(0, gauge("CordonedLogDirectoryCount", None))
++    assertEquals(0, gauge("LogDirectoryCordoned", Some(logDir)))
++  }
++
+   @Test
+   def testFileReferencesAfterAsyncDelete(): Unit = {
+     val log = logManager.getOrCreateLog(new TopicPartition(name, 0), topicId = Optional.empty)
+diff --git a/core/src/test/scala/unit/kafka/server/BrokerLifecycleManagerTest.scala b/core/src/test/scala/unit/kafka/server/BrokerLifecycleManagerTest.scala
+index 86d587eae0..c0c7ce1d4a 100644
+--- a/core/src/test/scala/unit/kafka/server/BrokerLifecycleManagerTest.scala
++++ b/core/src/test/scala/unit/kafka/server/BrokerLifecycleManagerTest.scala
+@@ -248,6 +248,35 @@ class BrokerLifecycleManagerTest {
+     assertEquals(Set("h3sC4Yk-Q9-fd0ntJTocCA", "ej8Q9_d2Ri6FXNiTxKFiow", "1iF76HVNRPqC7Y4r6647eg"), nextHeartbeatDirs())
+   }
+ 
++  @Test
++  def testHeartbeatReportsCordonedDirsOnlyAfterCatchUp(): Unit = {
++    val ctx = new RegistrationTestContext(configProperties)
++    manager = new BrokerLifecycleManager(ctx.config, ctx.time, "cordoned-dirs-in-heartbeat-", util.Set.of(Uuid.fromString("0IbF1sjhSGG6FNvnrPbqQg")))
++    val controllerNode = new Node(3000, "localhost", 8021)
++    ctx.controllerNodeProvider.node.set(controllerNode)
++    val cordoned = new java.util.concurrent.atomic.AtomicReference[util.Set[Uuid]](util.Set.of(Uuid.fromString("0IbF1sjhSGG6FNvnrPbqQg")))
++    manager.setCordonedLogDirsSupplier(() => cordoned.get())
++
++    val registration = prepareResponse(ctx, new BrokerRegistrationResponse(new BrokerRegistrationResponseData().setBrokerEpoch(1000)))
++    manager.start(() => ctx.highestMetadataOffset.get(),
++      ctx.mockChannelManager, ctx.clusterId, ctx.advertisedListeners,
++      Collections.emptyMap(), OptionalLong.empty())
++    poll(ctx, manager, registration)
++
++    def nextHeartbeat(caughtUp: Boolean): BrokerHeartbeatRequest =
++      poll(ctx, manager, prepareResponse[BrokerHeartbeatRequest](ctx,
++        new BrokerHeartbeatResponse(new BrokerHeartbeatResponseData().setIsCaughtUp(caughtUp))))
++
++    // Not reported while the broker is still catching up with the metadata
++    assertNull(nextHeartbeat(caughtUp = true).data().cordonedLogDirs())
++    assertEquals(Set("0IbF1sjhSGG6FNvnrPbqQg"),
++      nextHeartbeat(caughtUp = true).data().cordonedLogDirs().asScala.map(_.toString).toSet)
++
++    // Changes are picked up, and an empty list is reported to uncordon
++    cordoned.set(util.Set.of())
++    assertEquals(Set.empty, nextHeartbeat(caughtUp = true).data().cordonedLogDirs().asScala.toSet)
++  }
++
+   @Test
+   def testRegistrationIncludesDirs(): Unit = {
+     val logDirs = util.Set.of(Uuid.fromString("ad5FLIeCTnaQdai5vOjeng"), Uuid.fromString("ybdzUKmYSLK6oiIpI6CPlw"))
+diff --git a/core/src/test/scala/unit/kafka/server/ConfigAdminManagerTest.scala b/core/src/test/scala/unit/kafka/server/ConfigAdminManagerTest.scala
+index 5e4ae95ee1..63be2466dd 100644
+--- a/core/src/test/scala/unit/kafka/server/ConfigAdminManagerTest.scala
++++ b/core/src/test/scala/unit/kafka/server/ConfigAdminManagerTest.scala
+@@ -41,6 +41,7 @@ import org.apache.kafka.common.protocol.Errors
+ import org.apache.kafka.common.protocol.Errors.{INVALID_REQUEST, NONE}
+ import org.apache.kafka.common.requests.ApiError
+ import org.apache.kafka.metadata.MockConfigRepository
++import org.apache.kafka.server.common.MetadataVersion
+ import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertTrue}
+ import org.junit.jupiter.api.{Assertions, Test}
+ import org.slf4j.LoggerFactory
+@@ -298,6 +299,52 @@ class ConfigAdminManagerTest {
+         (_, _) => true))
+   }
+ 
++  private def cordonedLogDirsIncremental(brokerId: Int, value: String, opType: OpType = OpType.SET): IAlterConfigsResource =
++    new IAlterConfigsResource().
++      setResourceName(brokerId.toString).
++      setResourceType(BROKER.id()).
++      setConfigs(new IAlterableConfigCollection(
++        util.Arrays.asList(new IAlterableConfig().setName("cordoned.log.dirs").
++          setValue(value).
++          setConfigOperation(opType.id())).iterator()))
++
++  private def preprocessCordoned(
++    manager: ConfigAdminManager,
++    resource: IAlterConfigsResource
++  ): ApiError = {
++    manager.preprocess(new IncrementalAlterConfigsRequestData().
++      setResources(new IAlterConfigsResourceCollection(util.Arrays.asList(resource).iterator())),
++      (_, _) => true).get(resource)
++  }
++
++  @Test
++  def testCordonedLogDirsRequireMetadataVersion(): Unit = {
++    val config = new KafkaConfig(TestUtils.createBrokerConfig(nodeId = 1))
++    val logDir = config.logDirs.get(0)
++    val unsupported = new ConfigAdminManager(1, config, new MockConfigRepository(), () => MetadataVersion.IBP_4_2_IV1)
++    val error = preprocessCordoned(unsupported, cordonedLogDirsIncremental(1, logDir))
++    assertEquals(Errors.INVALID_CONFIG, error.error())
++
++    // Removing the config is always fine
++    assertEquals(Errors.NONE,
++      preprocessCordoned(unsupported, cordonedLogDirsIncremental(1, null, OpType.DELETE)).error())
++
++    val supported = new ConfigAdminManager(1, config, new MockConfigRepository(), () => MetadataVersion.IBP_4_3_IV0)
++    assertEquals(Errors.NONE, preprocessCordoned(supported, cordonedLogDirsIncremental(1, logDir)).error())
++    assertEquals(Errors.NONE, preprocessCordoned(supported, cordonedLogDirsIncremental(1, "*")).error())
++  }
++
++  @Test
++  def testCordonedLogDirsMustBeLogDirsOfTheBroker(): Unit = {
++    val config = new KafkaConfig(TestUtils.createBrokerConfig(nodeId = 1))
++    val manager = new ConfigAdminManager(1, config, new MockConfigRepository(), () => MetadataVersion.IBP_4_3_IV0)
++    val error = preprocessCordoned(manager, cordonedLogDirsIncremental(1, config.logDirs.get(0) + ",/not/a/log/dir"))
++    assertEquals(Errors.INVALID_CONFIG, error.error())
++
++    // The log directories of other brokers are not known, so they can't be checked
++    assertEquals(Errors.NONE, preprocessCordoned(manager, cordonedLogDirsIncremental(2, "/dir/of/broker/2")).error())
++  }
++
+   @Test
+   def testPreprocessIncrementalWithLoggerChanges(): Unit = {
+     val manager = newConfigAdminManager(1)
+diff --git a/core/src/test/scala/unit/kafka/server/KafkaConfigTest.scala b/core/src/test/scala/unit/kafka/server/KafkaConfigTest.scala
+index c44a4934b3..85e8687974 100755
+--- a/core/src/test/scala/unit/kafka/server/KafkaConfigTest.scala
++++ b/core/src/test/scala/unit/kafka/server/KafkaConfigTest.scala
+@@ -828,6 +828,7 @@ class KafkaConfigTest {
+         case ServerLogConfigs.NUM_PARTITIONS_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", "0")
+         case ServerLogConfigs.LOG_DIRS_CONFIG => assertPropertyInvalid(baseProperties, name, "")
+         case ServerLogConfigs.LOG_DIR_CONFIG => assertPropertyInvalid(baseProperties, name, "")
++        case ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG => // any list of strings is accepted, the entries are checked against the log dirs when applied
+         case ServerLogConfigs.LOG_SEGMENT_BYTES_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", Records.LOG_OVERHEAD - 1)
+ 
+         case ServerLogConfigs.LOG_ROLL_TIME_MILLIS_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", "0")
+diff --git a/metadata/src/main/java/org/apache/kafka/controller/ClusterControlManager.java b/metadata/src/main/java/org/apache/kafka/controller/ClusterControlManager.java
+index 4a355c206b..8e5a71e7a2 100644
+--- a/metadata/src/main/java/org/apache/kafka/controller/ClusterControlManager.java
++++ b/metadata/src/main/java/org/apache/kafka/controller/ClusterControlManager.java
+@@ -65,6 +65,7 @@ import java.util.Iterator;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Map.Entry;
++import java.util.NoSuchElementException;
+ import java.util.Optional;
+ import java.util.OptionalLong;
+ import java.util.Random;
+@@ -617,6 +618,7 @@ public class ClusterControlManager {
+             record.epoch(),
+             BrokerRegistrationFencingChange.FENCE.asBoolean(),
+             BrokerRegistrationInControlledShutdownChange.NONE.asBoolean(),
++            Optional.empty(),
+             Optional.empty()
+         );
+     }
+@@ -628,6 +630,7 @@ public class ClusterControlManager {
+             record.epoch(),
+             BrokerRegistrationFencingChange.UNFENCE.asBoolean(),
+             BrokerRegistrationInControlledShutdownChange.NONE.asBoolean(),
++            Optional.empty(),
+             Optional.empty()
+         );
+     }
+@@ -648,7 +651,8 @@ public class ClusterControlManager {
+             record.brokerEpoch(),
+             fencingChange.asBoolean(),
+             inControlledShutdownChange.asBoolean(),
+-            directoriesChange
++            directoriesChange,
++            Optional.ofNullable(record.cordonedLogDirs())
+         );
+     }
+ 
+@@ -658,7 +662,8 @@ public class ClusterControlManager {
+         long brokerEpoch,
+         Optional<Boolean> fencingChange,
+         Optional<Boolean> inControlledShutdownChange,
+-        Optional<List<Uuid>> directoriesChange
++        Optional<List<Uuid>> directoriesChange,
++        Optional<List<Uuid>> cordonedDirectoriesChange
+     ) {
+         BrokerRegistration curRegistration = brokerRegistrations.get(brokerId);
+         if (curRegistration == null) {
+@@ -671,7 +676,8 @@ public class ClusterControlManager {
+             BrokerRegistration nextRegistration = curRegistration.cloneWith(
+                 fencingChange,
+                 inControlledShutdownChange,
+-                directoriesChange
++                directoriesChange,
++                cordonedDirectoriesChange
+             );
+             if (!curRegistration.equals(nextRegistration)) {
+                 log.info("Replayed {} modifying the registration for broker {}: {}",
+@@ -704,8 +710,31 @@ public class ClusterControlManager {
+         if (heartbeatManager == null) {
+             throw new RuntimeException("ClusterControlManager is not active.");
+         }
+-        return heartbeatManager.usableBrokers(
++        Iterator<UsableBroker> all = heartbeatManager.usableBrokers(
+             id -> brokerRegistrations.get(id).rack());
++        // Brokers whose log directories are all cordoned must not receive new partitions.
++        return new Iterator<>() {
++            private UsableBroker next = null;
++
++            @Override
++            public boolean hasNext() {
++                while (next == null && all.hasNext()) {
++                    UsableBroker candidate = all.next();
++                    if (brokerRegistrations.get(candidate.id()).hasUncordonedDirectory()) {
++                        next = candidate;
++                    }
++                }
++                return next != null;
++            }
++
++            @Override
++            public UsableBroker next() {
++                if (!hasNext()) throw new NoSuchElementException();
++                UsableBroker result = next;
++                next = null;
++                return result;
++            }
++        };
+     }
+ 
+     /**
+diff --git a/metadata/src/main/java/org/apache/kafka/controller/ReplicationControlManager.java b/metadata/src/main/java/org/apache/kafka/controller/ReplicationControlManager.java
+index 316213bbc0..205845f9ba 100644
+--- a/metadata/src/main/java/org/apache/kafka/controller/ReplicationControlManager.java
++++ b/metadata/src/main/java/org/apache/kafka/controller/ReplicationControlManager.java
+@@ -26,6 +26,7 @@ import org.apache.kafka.common.config.ConfigResource;
+ import org.apache.kafka.common.errors.ApiException;
+ import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
+ import org.apache.kafka.common.errors.InvalidPartitionsException;
++import org.apache.kafka.common.errors.IneligibleReplicaException;
+ import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
+ import org.apache.kafka.common.errors.InvalidReplicationFactorException;
+ import org.apache.kafka.common.errors.InvalidRequestException;
+@@ -737,6 +738,7 @@ public class ReplicationControlManager {
+                 }
+                 PartitionAssignment partitionAssignment = new PartitionAssignment(assignment.brokerIds(), clusterDescriber);
+                 validateManualPartitionAssignment(partitionAssignment, replicationFactor);
++                validateNoCordonedBrokers(partitionAssignment.replicas());
+                 replicationFactor = OptionalInt.of(assignment.brokerIds().size());
+                 List<Integer> isr = assignment.brokerIds().stream().
+                     filter(clusterControl::isActive).toList();
+@@ -1531,6 +1533,30 @@ public class ReplicationControlManager {
+         }
+     }
+ 
++    /**
++     * Record the cordoned log directories reported by a broker, if they changed.
++     *
++     * @param cordonedDirs  The cordoned directories, or null if the broker did not report them.
++     */
++    void handleCordonedDirectories(
++        int brokerId,
++        long brokerEpoch,
++        List<Uuid> cordonedDirs,
++        List<ApiMessageAndVersion> records
++    ) {
++        if (cordonedDirs == null) return;
++        BrokerRegistration registration = clusterControl.registration(brokerId);
++        List<Uuid> sorted = new ArrayList<>(new HashSet<>(cordonedDirs));
++        sorted.sort(Uuid::compareTo);
++        if (sorted.equals(registration.cordonedDirectories())) return;
++        records.add(new ApiMessageAndVersion(new BrokerRegistrationChangeRecord().
++            setBrokerId(brokerId).setBrokerEpoch(brokerEpoch).
++            setCordonedLogDirs(sorted),
++            (short) 3));
++        log.info("Cordoned directories in broker {} changed from {} to {}",
++            brokerId, registration.cordonedDirectories(), sorted);
++    }
++
+     ControllerResult<ElectLeadersResponseData> electLeaders(ElectLeadersRequestData request) {
+         ElectionType electionType = electionType(request.electionType());
+         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
+@@ -1667,6 +1693,9 @@ public class ReplicationControlManager {
+         if (featureControl.metadataVersionOrThrow().isDirectoryAssignmentSupported()) {
+             handleDirectoriesOffline(brokerId, brokerEpoch, request.offlineLogDirs(), records);
+         }
++        if (featureControl.metadataVersionOrThrow().isCordonedLogDirsSupported()) {
++            handleCordonedDirectories(brokerId, brokerEpoch, request.cordonedLogDirs(), records);
++        }
+         boolean isCaughtUp = request.currentMetadataOffset() >= registerBrokerRecordOffset;
+         BrokerHeartbeatReply reply = new BrokerHeartbeatReply(isCaughtUp,
+                 states.next().fenced(),
+@@ -1928,6 +1957,7 @@ public class ReplicationControlManager {
+                 List<Integer> replicas = topic.assignments().get(i).brokerIds();
+                 PartitionAssignment partitionAssignment = new PartitionAssignment(replicas, clusterDescriber);
+                 validateManualPartitionAssignment(partitionAssignment, OptionalInt.of(replicationFactor));
++                validateNoCordonedBrokers(partitionAssignment.replicas());
+                 partitionAssignments.add(partitionAssignment);
+                 List<Integer> isr = partitionAssignment.replicas().stream().
+                     filter(clusterControl::isActive).toList();
+@@ -1966,6 +1996,21 @@ public class ReplicationControlManager {
+         }
+     }
+ 
++    private boolean acceptsNewPartitions(int brokerId) {
++        BrokerRegistration registration = clusterControl.brokerRegistrations().get(brokerId);
++        return registration == null || registration.hasUncordonedDirectory();
++    }
++
++    void validateNoCordonedBrokers(List<Integer> brokerIds) {
++        for (int brokerId : brokerIds) {
++            if (!acceptsNewPartitions(brokerId)) {
++                throw new InvalidReplicaAssignmentException("The manual partition " +
++                    "assignment includes broker " + brokerId + ", but all of its log " +
++                    "directories are cordoned.");
++            }
++        }
++    }
++
+     void validateManualPartitionAssignment(
+         PartitionAssignment assignment,
+         OptionalInt replicationFactor
+@@ -2234,6 +2279,13 @@ public class ReplicationControlManager {
+         PartitionAssignment targetAssignment = new PartitionAssignment(target.replicas(), clusterDescriber);
+ 
+         validateManualPartitionAssignment(targetAssignment, OptionalInt.empty());
++        for (int brokerId : targetAssignment.replicas()) {
++            // Replicas which are already part of the partition may stay where they are.
++            if (!Replicas.contains(part.replicas, brokerId) && !acceptsNewPartitions(brokerId)) {
++                throw new IneligibleReplicaException("The reassignment includes broker " + brokerId +
++                    ", but all of its log directories are cordoned.");
++            }
++        }
+         if (!allowRFChange) {
+             validatePartitionReplicationFactorUnchanged(part, target);
+         }
+diff --git a/metadata/src/main/java/org/apache/kafka/image/ClusterDelta.java b/metadata/src/main/java/org/apache/kafka/image/ClusterDelta.java
+index 8f0556959b..c154eb74cb 100644
+--- a/metadata/src/main/java/org/apache/kafka/image/ClusterDelta.java
++++ b/metadata/src/main/java/org/apache/kafka/image/ClusterDelta.java
+@@ -143,7 +143,8 @@ public final class ClusterDelta {
+         BrokerRegistration nextRegistration = curRegistration.cloneWith(
+             fencingChange.asBoolean(),
+             inControlledShutdownChange.asBoolean(),
+-            directoriesChange
++            directoriesChange,
++            Optional.ofNullable(record.cordonedLogDirs())
+         );
+         if (!curRegistration.equals(nextRegistration)) {
+             changedBrokers.put(record.brokerId(), Optional.of(nextRegistration));
+diff --git a/metadata/src/main/java/org/apache/kafka/metadata/BrokerRegistration.java b/metadata/src/main/java/org/apache/kafka/metadata/BrokerRegistration.java
+index 56b2bdf375..f38ad1d36b 100644
+--- a/metadata/src/main/java/org/apache/kafka/metadata/BrokerRegistration.java
++++ b/metadata/src/main/java/org/apache/kafka/metadata/BrokerRegistration.java
+@@ -53,6 +53,7 @@ public class BrokerRegistration {
+         private boolean inControlledShutdown;
+         private boolean isMigratingZkBroker;
+         private List<Uuid> directories;
++        private List<Uuid> cordonedDirectories;
+ 
+         public Builder() {
+             this.id = 0;
+@@ -65,6 +66,7 @@ public class BrokerRegistration {
+             this.inControlledShutdown = false;
+             this.isMigratingZkBroker = false;
+             this.directories = List.of();
++            this.cordonedDirectories = List.of();
+         }
+ 
+         public Builder setId(int id) {
+@@ -127,6 +129,11 @@ public class BrokerRegistration {
+             return this;
+         }
+ 
++        public Builder setCordonedDirectories(List<Uuid> cordonedDirectories) {
++            this.cordonedDirectories = cordonedDirectories;
++            return this;
++        }
++
+         public BrokerRegistration build() {
+             return new BrokerRegistration(
+                 id,
+@@ -138,7 +145,8 @@ public class BrokerRegistration {
+                 fenced,
+                 inControlledShutdown,
+                 isMigratingZkBroker,
+-                directories);
++                directories,
++                cordonedDirectories);
+         }
+     }
+ 
+@@ -152,6 +160,7 @@ public class BrokerRegistration {
+     private final boolean inControlledShutdown;
+     private final boolean isMigratingZkBroker;
+     private final List<Uuid> directories;
++    private final List<Uuid> cordonedDirectories;
+ 
+     private BrokerRegistration(
+         int id,
+@@ -163,7 +172,8 @@ public class BrokerRegistration {
+         boolean fenced,
+         boolean inControlledShutdown,
+         boolean isMigratingZkBroker,
+-        List<Uuid> directories
++        List<Uuid> directories,
++        List<Uuid> cordonedDirectories
+     ) {
+         this.id = id;
+         this.epoch = epoch;
+@@ -185,6 +195,9 @@ public class BrokerRegistration {
+         directories = new ArrayList<>(directories);
+         directories.sort(Uuid::compareTo);
+         this.directories = Collections.unmodifiableList(directories);
++        cordonedDirectories = new ArrayList<>(cordonedDirectories);
++        cordonedDirectories.sort(Uuid::compareTo);
++        this.cordonedDirectories = Collections.unmodifiableList(cordonedDirectories);
+     }
+ 
+     public static BrokerRegistration fromRecord(RegisterBrokerRecord record) {
+@@ -209,7 +222,10 @@ public class BrokerRegistration {
+             record.fenced(),
+             record.inControlledShutdown(),
+             record.isMigratingZkBroker(),
+-            record.logDirs());
++            record.logDirs(),
++            // The cordoned directories are not part of the registration record. The broker reports them in
++            // its heartbeats, and they are recorded in BrokerRegistrationChangeRecord.
++            List.of());
+     }
+ 
+     public int id() {
+@@ -260,6 +276,25 @@ public class BrokerRegistration {
+         return directories;
+     }
+ 
++    /**
++     * @return the directories which are cordoned. New partitions must not be placed on these.
++     */
++    public List<Uuid> cordonedDirectories() {
++        return cordonedDirectories;
++    }
++
++    /**
++     * @return true if the broker has at least one online directory that is not cordoned.
++     *         A broker which did not register any directories is considered to have one.
++     */
++    public boolean hasUncordonedDirectory() {
++        if (directories.isEmpty()) return true;
++        for (Uuid dir : directories) {
++            if (!cordonedDirectories.contains(dir)) return true;
++        }
++        return false;
++    }
++
+     public boolean hasOnlineDir(Uuid dir) {
+         return DirectoryId.isOnline(dir, directories);
+     }
+@@ -330,7 +365,7 @@ public class BrokerRegistration {
+     @Override
+     public int hashCode() {
+         return Objects.hash(id, epoch, incarnationId, listeners, supportedFeatures,
+-            rack, fenced, inControlledShutdown, isMigratingZkBroker, directories);
++            rack, fenced, inControlledShutdown, isMigratingZkBroker, directories, cordonedDirectories);
+     }
+ 
+     @Override
+@@ -345,7 +380,8 @@ public class BrokerRegistration {
+             other.fenced == fenced &&
+             other.inControlledShutdown == inControlledShutdown &&
+             other.isMigratingZkBroker == isMigratingZkBroker &&
+-            other.directories.equals(directories);
++            other.directories.equals(directories) &&
++            other.cordonedDirectories.equals(cordonedDirectories);
+     }
+ 
+     @Override
+@@ -367,6 +403,7 @@ public class BrokerRegistration {
+                 ", inControlledShutdown=" + inControlledShutdown +
+                 ", isMigratingZkBroker=" + isMigratingZkBroker +
+                 ", directories=" + directories +
++                (cordonedDirectories.isEmpty() ? "" : ", cordonedDirectories=" + cordonedDirectories) +
+                 ")";
+     }
+ 
+@@ -374,12 +411,23 @@ public class BrokerRegistration {
+         Optional<Boolean> fencingChange,
+         Optional<Boolean> inControlledShutdownChange,
+         Optional<List<Uuid>> directoriesChange
++    ) {
++        return cloneWith(fencingChange, inControlledShutdownChange, directoriesChange, Optional.empty());
++    }
++
++    public BrokerRegistration cloneWith(
++        Optional<Boolean> fencingChange,
++        Optional<Boolean> inControlledShutdownChange,
++        Optional<List<Uuid>> directoriesChange,
++        Optional<List<Uuid>> cordonedDirectoriesChange
+     ) {
+         boolean newFenced = fencingChange.orElse(fenced);
+         boolean newInControlledShutdownChange = inControlledShutdownChange.orElse(inControlledShutdown);
+         List<Uuid> newDirectories = directoriesChange.orElse(directories);
++        List<Uuid> newCordonedDirectories = cordonedDirectoriesChange.orElse(cordonedDirectories);
+ 
+-        if (newFenced == fenced && newInControlledShutdownChange == inControlledShutdown && newDirectories.equals(directories))
++        if (newFenced == fenced && newInControlledShutdownChange == inControlledShutdown &&
++            newDirectories.equals(directories) && newCordonedDirectories.equals(cordonedDirectories))
+             return this;
+ 
+         return new BrokerRegistration(
+@@ -392,7 +440,8 @@ public class BrokerRegistration {
+             newFenced,
+             newInControlledShutdownChange,
+             isMigratingZkBroker,
+-            newDirectories
++            newDirectories,
++            newCordonedDirectories
+         );
+     }
+ }
+diff --git a/metadata/src/main/resources/common/metadata/BrokerRegistrationChangeRecord.json b/metadata/src/main/resources/common/metadata/BrokerRegistrationChangeRecord.json
+index 7a484a6aeb..f2567ff2fc 100644
+--- a/metadata/src/main/resources/common/metadata/BrokerRegistrationChangeRecord.json
++++ b/metadata/src/main/resources/common/metadata/BrokerRegistrationChangeRecord.json
+@@ -15,11 +15,12 @@
+ 
+ // Version 1 adds InControlledShutdown
+ // Version 2 adds LogDirs
++// Version 3 adds CordonedLogDirs
+ {
+   "apiKey": 17,
+   "type": "metadata",
+   "name": "BrokerRegistrationChangeRecord",
+-  "validVersions": "0-2",
++  "validVersions": "0-3",
+   "flexibleVersions": "0+",
+   "fields": [
+    { "name": "BrokerId", "type": "int32", "versions": "0+", "entityType": "brokerId",
+@@ -31,6 +32,9 @@
+    { "name": "InControlledShutdown", "type": "int8", "versions": "1+", "taggedVersions": "1+", "tag": 1,
+      "about": "0 if no change, 1 if the broker is in controlled shutdown." },
+    { "name": "LogDirs", "type":  "[]uuid", "versions":  "2+", "taggedVersions": "2+", "tag": 2,
+-     "about": "Log directories configured in this broker which are available." }
++     "about": "Log directories configured in this broker which are available." },
++   { "name": "CordonedLogDirs", "type":  "[]uuid", "versions":  "3+", "taggedVersions": "3+", "tag": 3,
++     "nullableVersions": "3+", "default": "null",
++     "about": "Log directories configured in this broker which are cordoned, or null if there is no change." }
+   ]
+ }
+diff --git a/metadata/src/test/java/org/apache/kafka/controller/ReplicationControlManagerTest.java b/metadata/src/test/java/org/apache/kafka/controller/ReplicationControlManagerTest.java
+index 7024d0de3a..4575b7e88c 100644
+--- a/metadata/src/test/java/org/apache/kafka/controller/ReplicationControlManagerTest.java
++++ b/metadata/src/test/java/org/apache/kafka/controller/ReplicationControlManagerTest.java
+@@ -2461,6 +2461,162 @@ public class ReplicationControlManagerTest {
+             ctx.replicationControl.getPartition(fooId, 1));
+     }
+ 
++    private static Uuid testDir(int brokerId) {
++        return Uuid.fromString("TESTBROKER" + Integer.toString(100000 + brokerId).substring(1) + "DIRAAAA");
++    }
++
++    private void heartbeatCordoned(ReplicationControlTestContext ctx, int brokerId, List<Uuid> cordonedDirs) {
++        ControllerResult<BrokerHeartbeatReply> result = ctx.replicationControl.processBrokerHeartbeat(
++            new BrokerHeartbeatRequestData().
++                setBrokerId(brokerId).setBrokerEpoch(defaultBrokerEpoch(brokerId)).
++                setCurrentMetadataOffset(1).
++                setCordonedLogDirs(cordonedDirs), 0);
++        ctx.replay(result.records());
++    }
++
++    @Test
++    public void testHeartbeatRecordsCordonedLogDirs() {
++        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
++        ctx.registerBrokers(0, 1);
++        ctx.unfenceBrokers(0, 1);
++        assertEquals(List.of(), ctx.clusterControl.registration(0).cordonedDirectories());
++
++        heartbeatCordoned(ctx, 0, List.of(testDir(0)));
++        assertEquals(List.of(testDir(0)), ctx.clusterControl.registration(0).cordonedDirectories());
++        assertFalse(ctx.clusterControl.registration(0).hasUncordonedDirectory());
++        assertEquals(List.of(), ctx.clusterControl.registration(1).cordonedDirectories());
++
++        // Reporting the same directories again does not generate records.
++        ControllerResult<BrokerHeartbeatReply> unchanged = ctx.replicationControl.processBrokerHeartbeat(
++            new BrokerHeartbeatRequestData().
++                setBrokerId(0).setBrokerEpoch(defaultBrokerEpoch(0)).
++                setCurrentMetadataOffset(1).
++                setCordonedLogDirs(List.of(testDir(0))), 0);
++        assertEquals(List.of(), unchanged.records());
++
++        // A heartbeat which does not report the cordoned directories leaves them unchanged.
++        ControllerResult<BrokerHeartbeatReply> notReported = ctx.replicationControl.processBrokerHeartbeat(
++            new BrokerHeartbeatRequestData().
++                setBrokerId(0).setBrokerEpoch(defaultBrokerEpoch(0)).
++                setCurrentMetadataOffset(1), 0);
++        assertEquals(List.of(), notReported.records());
++        assertEquals(List.of(testDir(0)), ctx.clusterControl.registration(0).cordonedDirectories());
++
++        // An empty list uncordons the directories.
++        heartbeatCordoned(ctx, 0, List.of());
++        assertEquals(List.of(), ctx.clusterControl.registration(0).cordonedDirectories());
++        assertTrue(ctx.clusterControl.registration(0).hasUncordonedDirectory());
++    }
++
++    @Test
++    public void testCordonedLogDirsIgnoredBeforeMetadataVersionSupportsThem() {
++        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().
++            setMetadataVersion(MetadataVersion.IBP_4_2_IV1).build();
++        ctx.registerBrokers(0);
++        ctx.unfenceBrokers(0);
++        heartbeatCordoned(ctx, 0, List.of(testDir(0)));
++        assertEquals(List.of(), ctx.clusterControl.registration(0).cordonedDirectories());
++    }
++
++    @Test
++    public void testCreateTopicsOnlyUsesBrokersWithUncordonedLogDirs() {
++        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
++        ctx.registerBrokers(0, 1, 2, 3);
++        ctx.unfenceBrokers(0, 1, 2, 3);
++        heartbeatCordoned(ctx, 3, List.of(testDir(3)));
++
++        // Only brokers 0, 1 and 2 can host replicas.
++        CreatableTopicResult foo = ctx.createTestTopic("foo", 10, (short) 3, NONE.code());
++        for (int partition = 0; partition < 10; partition++) {
++            int[] replicas = ctx.replicationControl.getPartition(foo.topicId(), partition).replicas;
++            assertEquals(3, replicas.length);
++            for (int replica : replicas) {
++                assertNotEquals(3, replica);
++            }
++        }
++
++        // There are not enough brokers left for a replication factor of 4.
++        ctx.createTestTopic("bar", 1, (short) 4, INVALID_REPLICATION_FACTOR.code());
++
++        // Uncordoning makes the broker usable again.
++        heartbeatCordoned(ctx, 3, List.of());
++        ctx.createTestTopic("bar", 1, (short) 4, NONE.code());
++    }
++
++    @Test
++    public void testBrokerWithSomeUncordonedLogDirsStaysEligible() {
++        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
++        Uuid dirA = Uuid.fromString("TESTBROKER00000DIRAAAA");
++        Uuid dirB = Uuid.fromString("TESTBROKER00000DIRBBBB");
++        ctx.registerBrokersWithDirs(0, List.of(dirA, dirB));
++        ctx.unfenceBrokers(0);
++        heartbeatCordoned(ctx, 0, List.of(dirA));
++        assertTrue(ctx.clusterControl.registration(0).hasUncordonedDirectory());
++        ctx.createTestTopic("foo", 1, (short) 1, NONE.code());
++        heartbeatCordoned(ctx, 0, List.of(dirA, dirB));
++        ctx.createTestTopic("bar", 1, (short) 1, INVALID_REPLICATION_FACTOR.code());
++    }
++
++    @Test
++    public void testManualAssignmentOnCordonedBrokerIsRejected() {
++        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
++        ctx.registerBrokers(0, 1, 2, 3);
++        ctx.unfenceBrokers(0, 1, 2, 3);
++        ctx.createTestTopic("foo", new int[][] {new int[] {0, 1}}, NONE.code());
++        heartbeatCordoned(ctx, 3, List.of(testDir(3)));
++
++        ctx.createTestTopic("bar", new int[][] {new int[] {0, 3}}, INVALID_REPLICA_ASSIGNMENT.code());
++        ctx.createPartitions(2, "foo", new int[][] {new int[] {1, 3}}, INVALID_REPLICA_ASSIGNMENT.code());
++        ctx.createPartitions(2, "foo", new int[][] {new int[] {1, 2}}, NONE.code());
++    }
++
++    @Test
++    public void testCreatePartitionsWithoutAssignmentSkipsCordonedBrokers() {
++        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
++        ctx.registerBrokers(0, 1, 2);
++        ctx.unfenceBrokers(0, 1, 2);
++        Uuid fooId = ctx.createTestTopic("foo", new int[][] {new int[] {0, 1}}).topicId();
++        heartbeatCordoned(ctx, 2, List.of(testDir(2)));
++
++        CreatePartitionsTopic topic = new CreatePartitionsTopic().setName("foo").setCount(6).setAssignments(null);
++        ControllerResult<List<CreatePartitionsTopicResult>> result = ctx.replicationControl.createPartitions(
++            anonymousContextFor(ApiKeys.CREATE_PARTITIONS), List.of(topic));
++        assertEquals(NONE.code(), result.response().get(0).errorCode());
++        ctx.replay(result.records());
++        for (int partition = 1; partition < 6; partition++) {
++            for (int replica : ctx.replicationControl.getPartition(fooId, partition).replicas) {
++                assertNotEquals(2, replica);
++            }
++        }
++    }
++
++    @Test
++    public void testReassignmentOntoCordonedBrokerIsIneligible() {
++        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
++        ctx.registerBrokers(0, 1, 2, 3);
++        ctx.unfenceBrokers(0, 1, 2, 3);
++        ctx.createTestTopic("foo", new int[][] {new int[] {0, 1}});
++        heartbeatCordoned(ctx, 3, List.of(testDir(3)));
++        heartbeatCordoned(ctx, 1, List.of(testDir(1)));
++
++        ControllerResult<AlterPartitionReassignmentsResponseData> result =
++            ctx.replicationControl.alterPartitionReassignments(
++                new AlterPartitionReassignmentsRequestData().setTopics(List.of(
++                    new ReassignableTopic().setName("foo").setPartitions(List.of(
++                        new ReassignablePartition().setPartitionIndex(0).setReplicas(List.of(0, 3)))))));
++        assertEquals(INELIGIBLE_REPLICA.code(),
++            result.response().responses().get(0).partitions().get(0).errorCode());
++        assertEquals(List.of(), result.records());
++
++        // Replicas which are already on the cordoned broker 1 may stay, and uncordoned brokers are fine.
++        result = ctx.replicationControl.alterPartitionReassignments(
++            new AlterPartitionReassignmentsRequestData().setTopics(List.of(
++                new ReassignableTopic().setName("foo").setPartitions(List.of(
++                    new ReassignablePartition().setPartitionIndex(0).setReplicas(List.of(1, 2)))))));
++        assertEquals(NONE.code(),
++            result.response().responses().get(0).partitions().get(0).errorCode());
++    }
++
+     private void assertLeaderAndIsr(
+         ReplicationControlManager replication,
+         TopicIdPartition topicIdPartition,
+diff --git a/metadata/src/test/java/org/apache/kafka/metadata/BrokerRegistrationTest.java b/metadata/src/test/java/org/apache/kafka/metadata/BrokerRegistrationTest.java
+index 49ac33490b..bdc43cf9f4 100644
+--- a/metadata/src/test/java/org/apache/kafka/metadata/BrokerRegistrationTest.java
++++ b/metadata/src/test/java/org/apache/kafka/metadata/BrokerRegistrationTest.java
+@@ -40,6 +40,7 @@ import java.util.stream.Stream;
+ import static org.junit.jupiter.api.Assertions.assertEquals;
+ import static org.junit.jupiter.api.Assertions.assertFalse;
+ import static org.junit.jupiter.api.Assertions.assertNotEquals;
++import static org.junit.jupiter.api.Assertions.assertSame;
+ import static org.junit.jupiter.api.Assertions.assertTrue;
+ 
+ @Timeout(value = 40)
+@@ -134,6 +135,35 @@ public class BrokerRegistrationTest {
+             REGISTRATIONS.get(3).toString());
+     }
+ 
++    @Test
++    public void testCordonedDirectories() {
++        Uuid dirA = Uuid.fromString("r4HpEsMuST6nQ4rznIEJVA");
++        Uuid dirB = Uuid.fromString("pc1GhUlBS92cGGaKXl6ipw");
++        BrokerRegistration registration = new BrokerRegistration.Builder().
++            setId(5).
++            setEpoch(0).
++            setIncarnationId(Uuid.fromString("1t8VyWx2TCSTpUWuqj-FOw")).
++            setListeners(List.of(new Endpoint("INTERNAL", SecurityProtocol.PLAINTEXT, "localhost", 9090))).
++            setSupportedFeatures(Map.of()).
++            setDirectories(List.of(dirA, dirB)).
++            setCordonedDirectories(List.of(dirA)).
++            build();
++        assertEquals(List.of(dirA), registration.cordonedDirectories());
++        assertTrue(registration.hasUncordonedDirectory());
++        assertTrue(registration.toString().contains("cordonedDirectories=[" + dirA + "]"));
++
++        BrokerRegistration allCordoned = registration.cloneWith(
++            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of(dirB, dirA)));
++        assertFalse(allCordoned.hasUncordonedDirectory());
++        assertNotEquals(registration, allCordoned);
++
++        BrokerRegistration uncordoned = allCordoned.cloneWith(
++            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of()));
++        assertEquals(List.of(), uncordoned.cordonedDirectories());
++        assertTrue(uncordoned.hasUncordonedDirectory());
++        assertSame(uncordoned, uncordoned.cloneWith(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
++    }
++
+     @Test
+     public void testFromRecordAndToRecord() {
+         testRoundTrip(REGISTRATIONS.get(0));
+diff --git a/server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java b/server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java
+index 8bdce25808..16de64e241 100644
+--- a/server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java
++++ b/server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java
+@@ -208,6 +208,10 @@ public enum MetadataVersion {
+         return this.isAtLeast(IBP_4_0_IV1);
+     }
+ 
++    public boolean isCordonedLogDirsSupported() {
++        return this.isAtLeast(IBP_4_3_IV0);
++    }
++
+     public boolean isMigrationSupported() {
+         return this.isAtLeast(MetadataVersion.IBP_3_4_IV0);
+     }
+diff --git a/server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java b/server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java
+index d0e1c60d6d..f5a196da83 100644
+--- a/server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java
++++ b/server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java
+@@ -40,6 +40,16 @@ public class ServerLogConfigs {
+     public static final String LOG_DIR_DOC = "A comma-separated list of the directories where the log data is stored. (supplemental to " + LOG_DIRS_CONFIG + " property)";
+     public static final String LOG_DIRS_DOC = "A comma-separated list of the directories where the log data is stored. If not set, the value in " + LOG_DIR_CONFIG + " is used.";
+ 
++    public static final String CORDONED_LOG_DIRS_CONFIG = "cordoned.log.dirs";
++    public static final String CORDONED_LOG_DIRS_ALL = "*";
++    public static final String CORDONED_LOG_DIRS_DEFAULT = "";
++    public static final String CORDONED_LOG_DIRS_DOC = "A comma-separated list of the directories that are cordoned. " +
++            "Entries must be directories listed in " + LOG_DIRS_CONFIG + " or " + LOG_DIR_CONFIG + ". " +
++            "Use <code>*</code> to cordon all of them. " +
++            "No new partitions are placed on a cordoned directory, but the existing partitions keep being served from it. " +
++            "A broker whose directories are all cordoned does not receive any new partition. " +
++            "This configuration requires metadata version 4.3-IV0 or higher.";
++
+     public static final String LOG_SEGMENT_BYTES_CONFIG = ServerTopicConfigSynonyms.serverSynonym(TopicConfig.SEGMENT_BYTES_CONFIG);
+     public static final String LOG_SEGMENT_BYTES_DOC = "The maximum size of a single log file";
+ 
+diff --git a/server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java b/server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java
+index e0bcfb7f14..79d4f55c21 100644
+--- a/server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java
++++ b/server-common/src/test/java/org/apache/kafka/server/common/MetadataVersionTest.java
+@@ -202,6 +202,12 @@ class MetadataVersionTest {
+         assertEquals(metadataVersion.isAtLeast(IBP_3_7_IV2), metadataVersion.isDirectoryAssignmentSupported());
+     }
+ 
++    @ParameterizedTest
++    @EnumSource(value = MetadataVersion.class)
++    public void testIsCordonedLogDirsSupported(MetadataVersion metadataVersion) {
++        assertEquals(metadataVersion.isAtLeast(IBP_4_3_IV0), metadataVersion.isCordonedLogDirsSupported());
++    }
++
+     @ParameterizedTest
+     @EnumSource(value = MetadataVersion.class)
+     public void testIsElrSupported(MetadataVersion metadataVersion) {
+diff --git a/server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java b/server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java
+index e148fb1c0b..a4772f2e6e 100644
+--- a/server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java
++++ b/server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java
+@@ -146,6 +146,12 @@ public class BrokerLifecycleManager {
+      */
+     private Map<Uuid, Boolean> offlineDirs = new HashMap<>();
+ 
++    /**
++     * Provides the IDs of the log directories which are currently cordoned. They are reported to the controller
++     * in each heartbeat after the broker has caught up with the metadata log.
++     */
++    private volatile Supplier<Set<Uuid>> cordonedLogDirsSupplier = Set::of;
++
+     /**
+      * True if we sent an event queue to the active controller requesting controlled
+      * shutdown.  This variable can only be read or written from the event queue thread.
+@@ -275,6 +281,26 @@ public class BrokerLifecycleManager {
+                 new OfflineDirBrokerFailureEvent(directory));
+     }
+ 
++    public void setCordonedLogDirsSupplier(Supplier<Set<Uuid>> cordonedLogDirsSupplier) {
++        this.cordonedLogDirsSupplier = cordonedLogDirsSupplier;
++    }
++
++    /**
++     * Notify the lifecycle manager that the cordoned log directories changed, so the controller is told promptly.
++     */
++    public void handleCordonedLogDirsChange() {
++        eventQueue.append(new CordonedLogDirsChangeEvent());
++    }
++
++    private class CordonedLogDirsChangeEvent implements EventQueue.Event {
++        @Override
++        public void run() {
++            if (registered && initialCatchUpFuture.isDone()) {
++                scheduleNextCommunicationImmediately();
++            }
++        }
++    }
++
+     public void resendBrokerRegistration() {
+         eventQueue.append(new ResendBrokerRegistrationEvent());
+     }
+@@ -532,6 +558,11 @@ public class BrokerLifecycleManager {
+             .setWantFence(!readyToUnfence)
+             .setWantShutDown(state == BrokerState.PENDING_CONTROLLED_SHUTDOWN)
+             .setOfflineLogDirs(new ArrayList<>(offlineDirs.keySet()));
++        if (initialCatchUpFuture.isDone()) {
++            // Only report the cordoned directories once caught up, since the configuration may only be
++            // meaningful after the metadata, e.g. the metadata version, is known.
++            data.setCordonedLogDirs(new ArrayList<>(cordonedLogDirsSupplier.get()));
++        }
+         if (logger.isTraceEnabled()) {
+             logger.trace("Sending broker heartbeat {}", data);
+         }
+diff --git a/server/src/main/java/org/apache/kafka/server/config/AbstractKafkaConfig.java b/server/src/main/java/org/apache/kafka/server/config/AbstractKafkaConfig.java
+index bfec3337ca..84d90b23b3 100644
+--- a/server/src/main/java/org/apache/kafka/server/config/AbstractKafkaConfig.java
++++ b/server/src/main/java/org/apache/kafka/server/config/AbstractKafkaConfig.java
+@@ -92,6 +92,10 @@ public abstract class AbstractKafkaConfig extends AbstractConfig {
+         return Optional.ofNullable(getList(ServerLogConfigs.LOG_DIRS_CONFIG)).orElse(getList(ServerLogConfigs.LOG_DIR_CONFIG));
+     }
+ 
++    public List<String> cordonedLogDirs() {
++        return getList(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG);
++    }
++
+     public int numIoThreads() {
+         return getInt(ServerConfigs.NUM_IO_THREADS_CONFIG);
+     }
+diff --git a/server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java b/server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java
+index 4ccd3005b7..b909abf066 100644
+--- a/server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java
++++ b/server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java
+@@ -61,6 +61,7 @@ public class DynamicBrokerConfig {
+ 
+     private static final Set<String> PER_BROKER_CONFIGS = Stream.of(
+             DYNAMIC_SECURITY_CONFIGS,
++            DynamicCordonedLogDirsConfig.RECONFIGURABLE_CONFIGS,
+             DynamicListenerConfig.RECONFIGURABLE_CONFIGS)
+         .flatMap(Collection::stream)
+         .filter(c -> !CLUSTER_LEVEL_LISTENER_CONFIGS.contains(c))
+@@ -74,6 +75,7 @@ public class DynamicBrokerConfig {
+             List.of(MetricConfigs.METRIC_REPORTER_CLASSES_CONFIG),
+             DynamicListenerConfig.RECONFIGURABLE_CONFIGS,
+             SocketServer.RECONFIGURABLE_CONFIGS,
++            DynamicCordonedLogDirsConfig.RECONFIGURABLE_CONFIGS,
+             DYNAMIC_PRODUCER_STATE_MANAGER_CONFIGS,
+             DynamicRemoteLogConfig.RECONFIGURABLE_CONFIGS,
+             DynamicReplicationConfig.RECONFIGURABLE_CONFIGS,
+@@ -209,6 +211,13 @@ public class DynamicBrokerConfig {
+                 ServerTopicConfigSynonyms.TOPIC_CONFIG_SYNONYMS.values());
+     }
+ 
++    public static class DynamicCordonedLogDirsConfig {
++        /**
++         * The cordoned log directories are specific to each broker, so they are only valid as a per-broker config.
++         */
++        public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG);
++    }
++
+     public static class DynamicListenerConfig {
+         /**
+          * The set of configurations which the DynamicListenerConfig object listens for. Many of
+diff --git a/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java b/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java
+new file mode 100644
+index 0000000000..78681459b7
+--- /dev/null
++++ b/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java
+@@ -0,0 +1,306 @@
++/*
++ * Licensed to the Apache Software Foundation (ASF) under one or more
++ * contributor license agreements. See the NOTICE file distributed with
++ * this work for additional information regarding copyright ownership.
++ * The ASF licenses this file to You under the Apache License, Version 2.0
++ * (the "License"); you may not use this file except in compliance with
++ * the License. You may obtain a copy of the License at
++ *
++ *    http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.apache.kafka.server;
++
++import org.apache.kafka.clients.admin.Admin;
++import org.apache.kafka.clients.admin.AlterConfigOp;
++import org.apache.kafka.clients.admin.ConfigEntry;
++import org.apache.kafka.clients.admin.CreateTopicsOptions;
++import org.apache.kafka.clients.admin.LogDirDescription;
++import org.apache.kafka.clients.admin.NewPartitionReassignment;
++import org.apache.kafka.clients.admin.NewPartitions;
++import org.apache.kafka.clients.admin.NewTopic;
++import org.apache.kafka.common.TopicPartition;
++import org.apache.kafka.common.TopicPartitionReplica;
++import org.apache.kafka.common.config.ConfigResource;
++import org.apache.kafka.common.errors.IneligibleReplicaException;
++import org.apache.kafka.common.errors.InvalidConfigurationException;
++import org.apache.kafka.common.errors.InvalidReplicaAssignmentException;
++import org.apache.kafka.common.errors.InvalidReplicationFactorException;
++import org.apache.kafka.common.test.ClusterInstance;
++import org.apache.kafka.common.test.api.ClusterConfigProperty;
++import org.apache.kafka.common.test.api.ClusterTest;
++import org.apache.kafka.common.test.api.ClusterTestDefaults;
++import org.apache.kafka.server.common.MetadataVersion;
++import org.apache.kafka.server.config.ServerLogConfigs;
++import org.apache.kafka.test.TestUtils;
++
++import java.util.List;
++import java.util.Map;
++import java.util.Optional;
++import java.util.Set;
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.atomic.AtomicReference;
++import java.util.stream.Collectors;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertInstanceOf;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++@ClusterTestDefaults(brokers = 3, disksPerBroker = 2, serverProperties = {
++    @ClusterConfigProperty(key = "offsets.topic.replication.factor", value = "1"),
++    @ClusterConfigProperty(key = "share.coordinator.state.topic.replication.factor", value = "1"),
++    @ClusterConfigProperty(key = "transaction.state.log.replication.factor", value = "1"),
++    @ClusterConfigProperty(key = "transaction.state.log.min.isr", value = "1"),
++    @ClusterConfigProperty(key = ServerLogConfigs.LOG_INITIAL_TASK_DELAY_MS_CONFIG, value = "0")
++})
++public class CordonedLogDirsIntegrationTest {
++
++    private final ClusterInstance cluster;
++
++    CordonedLogDirsIntegrationTest(ClusterInstance cluster) {
++        this.cluster = cluster;
++    }
++
++    private static ConfigResource broker(int brokerId) {
++        return new ConfigResource(ConfigResource.Type.BROKER, Integer.toString(brokerId));
++    }
++
++    private static void setCordoned(Admin admin, int brokerId, String value) throws Exception {
++        admin.incrementalAlterConfigs(Map.of(broker(brokerId), List.of(new AlterConfigOp(
++            new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value), AlterConfigOp.OpType.SET)))).all().get();
++    }
++
++    private static void clearCordoned(Admin admin, int brokerId) throws Exception {
++        admin.incrementalAlterConfigs(Map.of(broker(brokerId), List.of(new AlterConfigOp(
++            new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, null), AlterConfigOp.OpType.DELETE)))).all().get();
++    }
++
++    private static Map<String, LogDirDescription> logDirs(Admin admin, int brokerId) throws Exception {
++        return admin.describeLogDirs(List.of(brokerId)).allDescriptions().get().get(brokerId);
++    }
++
++    private static List<String> sortedLogDirPaths(Admin admin, int brokerId) throws Exception {
++        return logDirs(admin, brokerId).keySet().stream().sorted().collect(Collectors.toList());
++    }
++
++    private static void waitForCordonedState(Admin admin, int brokerId, Set<String> expectedCordoned) throws Exception {
++        TestUtils.waitForCondition(() -> {
++            Map<String, LogDirDescription> dirs = logDirs(admin, brokerId);
++            return dirs.entrySet().stream().allMatch(e -> e.getValue().isCordoned() == expectedCordoned.contains(e.getKey()));
++        }, "Timed out waiting for the cordoned log directories of broker " + brokerId + " to be " + expectedCordoned);
++    }
++
++    /**
++     * Wait until the controller rejects a topic of the given replication factor because of cordoned log directories,
++     * or accepts it. The topic is only validated, never created.
++     */
++    private static void waitForPlacement(Admin admin, int replicationFactor, boolean expectAccepted) throws Exception {
++        TestUtils.waitForCondition(() -> {
++            try {
++                admin.createTopics(List.of(new NewTopic("probe", 1, (short) replicationFactor)),
++                    new CreateTopicsOptions().validateOnly(true)).all().get();
++                return expectAccepted;
++            } catch (ExecutionException e) {
++                assertInstanceOf(InvalidReplicationFactorException.class, e.getCause());
++                return !expectAccepted;
++            }
++        }, "Timed out waiting for topics with replication factor " + replicationFactor +
++            (expectAccepted ? " to be accepted" : " to be rejected"));
++    }
++
++    private static Set<Integer> replicaBrokers(Admin admin, String topic) throws Exception {
++        return replicaBrokers(admin, topic, 1);
++    }
++
++    /**
++     * The brokers hosting replicas of the topic, once the metadata shows at least the given number of partitions.
++     */
++    private static Set<Integer> replicaBrokers(Admin admin, String topic, int partitions) throws Exception {
++        AtomicReference<Set<Integer>> result = new AtomicReference<>();
++        TestUtils.waitForCondition(() -> {
++            try {
++                var description = admin.describeTopics(List.of(topic)).allTopicNames().get().get(topic);
++                if (description.partitions().size() < partitions) {
++                    return false;
++                }
++                result.set(description.partitions().stream()
++                    .flatMap(p -> p.replicas().stream())
++                    .map(node -> node.id())
++                    .collect(Collectors.toSet()));
++                return true;
++            } catch (ExecutionException e) {
++                return false;
++            }
++        }, "Timed out waiting for the metadata of topic " + topic);
++        return result.get();
++    }
++
++    private static long replicasInDir(Admin admin, int brokerId, String dir, String topic) throws Exception {
++        return logDirs(admin, brokerId).get(dir).replicaInfos().keySet().stream()
++            .filter(tp -> tp.topic().equals(topic))
++            .count();
++    }
++
++    @ClusterTest
++    public void testCordoningAllLogDirsOfABrokerExcludesItFromPlacement() throws Exception {
++        try (Admin admin = cluster.admin()) {
++            List<String> dirs = sortedLogDirPaths(admin, 2);
++            assertEquals(2, dirs.size());
++            logDirs(admin, 2).values().forEach(dir -> assertFalse(dir.isCordoned()));
++
++            // A topic which exists before the broker is cordoned
++            admin.createTopics(List.of(new NewTopic("pre-existing", 3, (short) 3))).all().get();
++            TestUtils.waitForCondition(() -> dirs.stream().mapToLong(dir -> {
++                try {
++                    return replicasInDir(admin, 2, dir, "pre-existing");
++                } catch (Exception ex) {
++                    return 0;
++                }
++            }).sum() == 3, "Timed out waiting for the replicas of broker 2 to be created");
++
++            setCordoned(admin, 2, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
++            waitForCordonedState(admin, 2, Set.copyOf(dirs));
++            // All the brokers are needed for a replication factor of three, so the request has to be rejected
++            waitForPlacement(admin, 3, false);
++            waitForPlacement(admin, 2, true);
++
++            // New partitions are only placed on the other brokers
++            admin.createTopics(List.of(new NewTopic("cordoned-all", 6, (short) 2))).all().get();
++            assertEquals(Set.of(0, 1), replicaBrokers(admin, "cordoned-all"));
++
++            // Explicit assignments onto the broker are invalid
++            Map<Integer, List<Integer>> assignment = Map.of(0, List.of(0, 2));
++            ExecutionException e = assertThrows(ExecutionException.class,
++                () -> admin.createTopics(List.of(new NewTopic("explicit", assignment))).all().get());
++            assertInstanceOf(InvalidReplicaAssignmentException.class, e.getCause());
++
++            // So are partition reassignments
++            TopicPartition tp = new TopicPartition("cordoned-all", 0);
++            e = assertThrows(ExecutionException.class,
++                () -> admin.alterPartitionReassignments(
++                    Map.of(tp, Optional.of(new NewPartitionReassignment(List.of(0, 2))))).all().get());
++            assertInstanceOf(IneligibleReplicaException.class, e.getCause());
++
++            // Adding partitions follows the same rules
++            admin.createPartitions(Map.of("cordoned-all", NewPartitions.increaseTo(8))).all().get();
++            assertEquals(Set.of(0, 1), replicaBrokers(admin, "cordoned-all", 8));
++
++            // The existing replicas on the broker keep being served
++            assertEquals(3, dirs.stream().mapToLong(dir -> {
++                try {
++                    return replicasInDir(admin, 2, dir, "pre-existing");
++                } catch (Exception ex) {
++                    return 0;
++                }
++            }).sum());
++            assertEquals(Set.of(0, 1, 2), replicaBrokers(admin, "pre-existing"));
++        }
++    }
++
++    @ClusterTest
++    public void testUncordoningMakesTheBrokerEligibleAgain() throws Exception {
++        try (Admin admin = cluster.admin()) {
++            setCordoned(admin, 2, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
++            waitForPlacement(admin, 3, false);
++
++            clearCordoned(admin, 2);
++            waitForCordonedState(admin, 2, Set.of());
++            waitForPlacement(admin, 3, true);
++
++            admin.createTopics(List.of(new NewTopic("uncordoned", 3, (short) 3))).all().get();
++            assertEquals(Set.of(0, 1, 2), replicaBrokers(admin, "uncordoned"));
++        }
++    }
++
++    @ClusterTest
++    public void testCordoningOneLogDirKeepsTheBrokerEligible() throws Exception {
++        try (Admin admin = cluster.admin()) {
++            List<String> dirs = sortedLogDirPaths(admin, 0);
++            String cordonedDir = dirs.get(0);
++            String openDir = dirs.get(1);
++
++            setCordoned(admin, 0, cordonedDir);
++            waitForCordonedState(admin, 0, Set.of(cordonedDir));
++            // Broker 0 still has an uncordoned directory, so a replication factor of three works
++            waitForPlacement(admin, 3, true);
++
++            admin.createTopics(List.of(new NewTopic("one-dir", 6, (short) 3))).all().get();
++            assertEquals(Set.of(0, 1, 2), replicaBrokers(admin, "one-dir"));
++            TestUtils.waitForCondition(() -> replicasInDir(admin, 0, openDir, "one-dir") == 6,
++                "Timed out waiting for the replicas to be created in the uncordoned log directory");
++            assertEquals(0, replicasInDir(admin, 0, cordonedDir, "one-dir"));
++
++            // A replica can't be moved onto the cordoned directory
++            TopicPartitionReplica replica = new TopicPartitionReplica("one-dir", 0, 0);
++            ExecutionException e = assertThrows(ExecutionException.class,
++                () -> admin.alterReplicaLogDirs(Map.of(replica, cordonedDir)).all().get());
++            assertInstanceOf(InvalidReplicaAssignmentException.class, e.getCause());
++
++            // After uncordoning it can
++            clearCordoned(admin, 0);
++            waitForCordonedState(admin, 0, Set.of());
++            admin.alterReplicaLogDirs(Map.of(replica, cordonedDir)).all().get();
++            TestUtils.waitForCondition(() -> replicasInDir(admin, 0, cordonedDir, "one-dir") == 1,
++                "Timed out waiting for the replica to be moved");
++        }
++    }
++
++    @ClusterTest
++    public void testInvalidCordonedLogDirIsRejected() throws Exception {
++        try (Admin admin = cluster.admin()) {
++            ExecutionException e = assertThrows(ExecutionException.class,
++                () -> setCordoned(admin, 0, "/this/is/not/a/log/dir"));
++            assertInstanceOf(InvalidConfigurationException.class, e.getCause());
++            waitForCordonedState(admin, 0, Set.of());
++        }
++    }
++
++    @ClusterTest(metadataVersion = MetadataVersion.IBP_4_2_IV1)
++    public void testCordoningIsRejectedWithOldMetadataVersion() throws Exception {
++        try (Admin admin = cluster.admin()) {
++            ExecutionException e = assertThrows(ExecutionException.class,
++                () -> setCordoned(admin, 0, ServerLogConfigs.CORDONED_LOG_DIRS_ALL));
++            assertInstanceOf(InvalidConfigurationException.class, e.getCause());
++            waitForCordonedState(admin, 0, Set.of());
++        }
++    }
++
++    @ClusterTest(metadataVersion = MetadataVersion.IBP_4_2_IV1, serverProperties = {
++        @ClusterConfigProperty(key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = "*")
++    })
++    public void testStaticConfigHasNoEffectWithOldMetadataVersion() throws Exception {
++        try (Admin admin = cluster.admin()) {
++            waitForCordonedState(admin, 0, Set.of());
++            admin.createTopics(List.of(new NewTopic("static", 3, (short) 3))).all().get();
++            assertEquals(Set.of(0, 1, 2), replicaBrokers(admin, "static"));
++        }
++    }
++
++    @ClusterTest(serverProperties = {
++        @ClusterConfigProperty(key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = "*")
++    })
++    public void testStaticConfigCordonsAllLogDirs() throws Exception {
++        try (Admin admin = cluster.admin()) {
++            for (int brokerId : cluster.brokerIds()) {
++                waitForCordonedState(admin, brokerId, logDirs(admin, brokerId).keySet());
++            }
++            // Every broker is cordoned, so there is nowhere to place a new topic
++            waitForPlacement(admin, 1, false);
++
++            // Uncordoning one broker dynamically lets it receive partitions. The dynamic config overrides the static one.
++            setCordoned(admin, 1, "");
++            waitForCordonedState(admin, 1, Set.of());
++            waitForPlacement(admin, 1, true);
++            admin.createTopics(List.of(new NewTopic("static-all", 3, (short) 1))).all().get();
++            assertEquals(Set.of(1), replicaBrokers(admin, "static-all"));
++            assertTrue(logDirs(admin, 0).values().stream().allMatch(LogDirDescription::isCordoned));
++        }
++    }
++}
+diff --git a/storage/src/main/java/org/apache/kafka/storage/internals/log/LogConfig.java b/storage/src/main/java/org/apache/kafka/storage/internals/log/LogConfig.java
+index 41b9c6fbb4..bf096f255e 100644
+--- a/storage/src/main/java/org/apache/kafka/storage/internals/log/LogConfig.java
++++ b/storage/src/main/java/org/apache/kafka/storage/internals/log/LogConfig.java
+@@ -146,6 +146,7 @@ public class LogConfig extends AbstractConfig {
+             .define(ServerLogConfigs.NUM_PARTITIONS_CONFIG, INT, ServerLogConfigs.NUM_PARTITIONS_DEFAULT, atLeast(1), MEDIUM, ServerLogConfigs.NUM_PARTITIONS_DOC)
+             .define(ServerLogConfigs.LOG_DIR_CONFIG, LIST, ServerLogConfigs.LOG_DIR_DEFAULT, ConfigDef.ValidList.anyNonDuplicateValues(false, false), HIGH, ServerLogConfigs.LOG_DIR_DOC)
+             .define(ServerLogConfigs.LOG_DIRS_CONFIG, LIST, null, ConfigDef.ValidList.anyNonDuplicateValues(false, true), HIGH, ServerLogConfigs.LOG_DIRS_DOC)
++            .define(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, LIST, ServerLogConfigs.CORDONED_LOG_DIRS_DEFAULT, ConfigDef.ValidList.anyNonDuplicateValues(true, false), LOW, ServerLogConfigs.CORDONED_LOG_DIRS_DOC)
+             .define(ServerLogConfigs.LOG_SEGMENT_BYTES_CONFIG, INT, DEFAULT_SEGMENT_BYTES, atLeast(1024 * 1024), HIGH, ServerLogConfigs.LOG_SEGMENT_BYTES_DOC)
+ 
+             .define(ServerLogConfigs.LOG_ROLL_TIME_MILLIS_CONFIG, LONG, null, HIGH, ServerLogConfigs.LOG_ROLL_TIME_MILLIS_DOC)
+diff --git a/tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java b/tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java
+index 18463f0283..078440b7df 100644
+--- a/tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java
++++ b/tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java
+@@ -120,6 +120,7 @@ public class LogDirsCommand {
+             String logDir = entry.getKey();
+             return new HashMap<String, Object>() {{
+                     put("logDir", logDir);
++                    put("isCordoned", entry.getValue().isCordoned());
+                     put("error", entry.getValue().error() != null ? entry.getValue().error().getClass().getName() : null);
+                     put("partitions", fromReplicasInfoToPrintableRepresentation(
+                             entry.getValue().replicaInfos().entrySet().stream().filter(entry -> {

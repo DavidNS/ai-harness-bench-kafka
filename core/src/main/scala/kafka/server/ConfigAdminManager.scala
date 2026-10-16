@@ -18,6 +18,7 @@ package kafka.server
 
 import kafka.server.logger.RuntimeLoggerManager
 
+import java.io.File
 import java.util
 import java.util.Properties
 import kafka.utils._
@@ -36,6 +37,8 @@ import org.apache.kafka.common.protocol.Errors.{INVALID_REQUEST, UNKNOWN_SERVER_
 import org.apache.kafka.common.requests.ApiError
 import org.apache.kafka.common.resource.{Resource, ResourceType}
 import org.apache.kafka.metadata.ConfigRepository
+import org.apache.kafka.server.common.MetadataVersion
+import org.apache.kafka.server.config.ServerLogConfigs
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.{Map, Seq}
@@ -76,7 +79,8 @@ import scala.jdk.CollectionConverters._
  */
 class ConfigAdminManager(nodeId: Int,
                          conf: KafkaConfig,
-                         configRepository: ConfigRepository) extends Logging {
+                         configRepository: ConfigRepository,
+                         metadataVersionSupplier: () => MetadataVersion = () => MetadataVersion.latestTesting()) extends Logging {
   import ConfigAdminManager._
 
   this.logIdent = "[ConfigAdminManager[nodeId=" + nodeId + "]: "
@@ -188,6 +192,7 @@ class ConfigAdminManager(nodeId: Int,
     configResource: ConfigResource
   ): Unit = {
     try {
+      validateCordonedLogDirs(props, configResource)
       conf.dynamicConfig.validate(props, configResource.name().nonEmpty)
     } catch {
       case e: ApiException => throw e
@@ -198,6 +203,34 @@ class ConfigAdminManager(nodeId: Int,
       case e: Throwable => throw new InvalidRequestException(e.getMessage)
     }
  }
+
+  /**
+   * The cordoned.log.dirs config requires metadata version 4.3-IV0. In addition, if the change is for this
+   * broker, its entries must be directories of this broker. The log directories of other brokers are not known here.
+   */
+  private def validateCordonedLogDirs(
+    props: Properties,
+    configResource: ConfigResource
+  ): Unit = {
+    val key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG
+    val newValue = Option(props.getProperty(key)).map(_.trim).getOrElse("")
+    if (newValue.isEmpty) return
+    val oldValue = Option(configRepository.config(configResource).getProperty(key)).map(_.trim).getOrElse("")
+    if (newValue == oldValue) return
+    if (!metadataVersionSupplier().isCordonedLogDirsSupported) {
+      throw new InvalidConfigurationException(s"Config $key requires metadata version " +
+        s"${MetadataVersion.IBP_4_3_IV0} or higher, but the current metadata version is ${metadataVersionSupplier()}.")
+    }
+    if (configResource.name() == nodeId.toString) {
+      val knownDirs = conf.logDirs.asScala.map(new File(_).getAbsolutePath).toSet
+      newValue.split(",").map(_.trim).filter(_.nonEmpty).foreach { entry =>
+        if (entry != ServerLogConfigs.CORDONED_LOG_DIRS_ALL && !knownDirs.contains(new File(entry).getAbsolutePath)) {
+          throw new InvalidConfigurationException(s"Config $key contains $entry, which is not one of the " +
+            s"log directories of broker $nodeId: ${conf.logDirs.asScala.mkString(",")}")
+        }
+      }
+    }
+  }
 
   /**
    * Preprocess a legacy configuration operation on the broker.

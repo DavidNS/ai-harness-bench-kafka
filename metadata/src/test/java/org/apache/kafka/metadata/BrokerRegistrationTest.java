@@ -40,6 +40,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(value = 40)
@@ -132,6 +133,35 @@ public class BrokerRegistrationTest {
             "rack=Optional.empty, fenced=false, inControlledShutdown=true, isMigratingZkBroker=true, " +
             "directories=[r4HpEsMuST6nQ4rznIEJVA])",
             REGISTRATIONS.get(3).toString());
+    }
+
+    @Test
+    public void testCordonedDirectories() {
+        Uuid dirA = Uuid.fromString("r4HpEsMuST6nQ4rznIEJVA");
+        Uuid dirB = Uuid.fromString("pc1GhUlBS92cGGaKXl6ipw");
+        BrokerRegistration registration = new BrokerRegistration.Builder().
+            setId(5).
+            setEpoch(0).
+            setIncarnationId(Uuid.fromString("1t8VyWx2TCSTpUWuqj-FOw")).
+            setListeners(List.of(new Endpoint("INTERNAL", SecurityProtocol.PLAINTEXT, "localhost", 9090))).
+            setSupportedFeatures(Map.of()).
+            setDirectories(List.of(dirA, dirB)).
+            setCordonedDirectories(List.of(dirA)).
+            build();
+        assertEquals(List.of(dirA), registration.cordonedDirectories());
+        assertTrue(registration.hasUncordonedDirectory());
+        assertTrue(registration.toString().contains("cordonedDirectories=[" + dirA + "]"));
+
+        BrokerRegistration allCordoned = registration.cloneWith(
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of(dirB, dirA)));
+        assertFalse(allCordoned.hasUncordonedDirectory());
+        assertNotEquals(registration, allCordoned);
+
+        BrokerRegistration uncordoned = allCordoned.cloneWith(
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of()));
+        assertEquals(List.of(), uncordoned.cordonedDirectories());
+        assertTrue(uncordoned.hasUncordonedDirectory());
+        assertSame(uncordoned, uncordoned.cloneWith(Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
     }
 
     @Test

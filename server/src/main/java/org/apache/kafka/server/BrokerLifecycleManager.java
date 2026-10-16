@@ -147,6 +147,12 @@ public class BrokerLifecycleManager {
     private Map<Uuid, Boolean> offlineDirs = new HashMap<>();
 
     /**
+     * Provides the IDs of the log directories which are currently cordoned. They are reported to the controller
+     * in each heartbeat after the broker has caught up with the metadata log.
+     */
+    private volatile Supplier<Set<Uuid>> cordonedLogDirsSupplier = Set::of;
+
+    /**
      * True if we sent an event queue to the active controller requesting controlled
      * shutdown.  This variable can only be read or written from the event queue thread.
      */
@@ -273,6 +279,26 @@ public class BrokerLifecycleManager {
         eventQueue.scheduleDeferred("offlineDirFailure",
                 new EventQueue.DeadlineFunction(time.nanoseconds() + MILLISECONDS.toNanos(timeout)),
                 new OfflineDirBrokerFailureEvent(directory));
+    }
+
+    public void setCordonedLogDirsSupplier(Supplier<Set<Uuid>> cordonedLogDirsSupplier) {
+        this.cordonedLogDirsSupplier = cordonedLogDirsSupplier;
+    }
+
+    /**
+     * Notify the lifecycle manager that the cordoned log directories changed, so the controller is told promptly.
+     */
+    public void handleCordonedLogDirsChange() {
+        eventQueue.append(new CordonedLogDirsChangeEvent());
+    }
+
+    private class CordonedLogDirsChangeEvent implements EventQueue.Event {
+        @Override
+        public void run() {
+            if (registered && initialCatchUpFuture.isDone()) {
+                scheduleNextCommunicationImmediately();
+            }
+        }
     }
 
     public void resendBrokerRegistration() {
@@ -532,6 +558,11 @@ public class BrokerLifecycleManager {
             .setWantFence(!readyToUnfence)
             .setWantShutDown(state == BrokerState.PENDING_CONTROLLED_SHUTDOWN)
             .setOfflineLogDirs(new ArrayList<>(offlineDirs.keySet()));
+        if (initialCatchUpFuture.isDone()) {
+            // Only report the cordoned directories once caught up, since the configuration may only be
+            // meaningful after the metadata, e.g. the metadata version, is known.
+            data.setCordonedLogDirs(new ArrayList<>(cordonedLogDirsSupplier.get()));
+        }
         if (logger.isTraceEnabled()) {
             logger.trace("Sending broker heartbeat {}", data);
         }
