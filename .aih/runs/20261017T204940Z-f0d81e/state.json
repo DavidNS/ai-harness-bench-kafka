@@ -1,0 +1,181 @@
+{
+  "attempts_total": 4,
+  "base_ref": "aih-base",
+  "base_sha": "e31ae3ebfc1ff7c25b9059923560c6ce39cf39ae",
+  "baseline_green": false,
+  "config": "/work/aih.toml",
+  "created_at": "2026-10-17T20:49:40+00:00",
+  "head": "2ab8ef46f0e14a0ed57b239f803e217e5d910ca5",
+  "plan_session_id": "b7af40ad-15ef-4974-9da3-c632385a9119",
+  "plan_version": 3,
+  "repo": "/work/tree",
+  "run_id": "20261017T204940Z-f0d81e",
+  "status": "implemented",
+  "tasks": {
+    "T3": {
+      "advisories": [
+        {
+          "file": "core/src/main/scala/kafka/log/LogManager.scala",
+          "line": 1088,
+          "pass": 1,
+          "severity": "advisory",
+          "text": "When every live directory is cordoned, nextLogDirs falls back to a cordoned directory, so ACC30 ('never picks a cordoned directory') only holds while an uncordoned live directory exists. The integration test asserts the fallback, so it is deliberate, but it deserves a comment or a KIP check."
+        },
+        {
+          "file": "server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java",
+          "line": 545,
+          "pass": 2,
+          "severity": "advisory",
+          "text": "No test checks that heartbeats omit CordonedLogDirs before the initial catch-up and include them afterwards. A BrokerLifecycleManager unit test, a KafkaConfig validation unit test for cordoned.log.dirs, and a LogManager unit test for nextLogDirs are also missing; only the integration tests exercise them."
+        },
+        {
+          "file": "core/src/main/scala/kafka/server/DynamicBrokerConfig.scala",
+          "line": 608,
+          "pass": 4,
+          "severity": "advisory",
+          "text": "DynamicCordonedLogDirs has an empty validateReconfiguration, and BrokerRegistration.sorted() duplicates the sorting done in the constructor and in handleCordonedDirectories. Both could be trimmed."
+        }
+      ],
+      "attempts": 1,
+      "commit": "2ab8ef46f0e14a0ed57b239f803e217e5d910ca5",
+      "coverage": [
+        {
+          "criterion": "ACC23",
+          "line": 286,
+          "note": "Probe testAcc23 passes: an invalid dir is rejected, a valid dir cordons, and deleting the entry uncordons.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testInvalidCordonedLogDirsAreRejected"
+        },
+        {
+          "criterion": "ACC24",
+          "line": 311,
+          "note": "Probe testAcc24 passes: on MV 4.2 the dynamic set gets InvalidConfigurationException and the static '*' has no effect.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testCordoningRequiresMetadataVersion"
+        },
+        {
+          "criterion": "ACC25",
+          "line": 203,
+          "note": "Probe testAcc25to28 passes: the controller picks up the dynamic cordon and uncordon without a restart. ReplicationControlManagerTest.testHandleCordonedDirectoriesInHeartbeat covers the controller side.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testBrokerWithAllLogDirectoriesCordonedReceivesNoNewPartitions"
+        },
+        {
+          "criterion": "ACC26",
+          "line": 208,
+          "note": "Probe testAcc25to28 passes: RF 3 gets INVALID_REPLICATION_FACTOR with one broker cordoned, and RF 2 succeeds.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testBrokerWithAllLogDirectoriesCordonedReceivesNoNewPartitions"
+        },
+        {
+          "criterion": "ACC27",
+          "line": 215,
+          "note": "Probe testAcc25to28 passes: a manual assignment including the cordoned broker gets InvalidReplicaAssignmentException.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testBrokerWithAllLogDirectoriesCordonedReceivesNoNewPartitions"
+        },
+        {
+          "criterion": "ACC28",
+          "line": 223,
+          "note": "Probe testAcc25to28 passes: reassigning onto the cordoned broker gets IneligibleReplicaException.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testBrokerWithAllLogDirectoriesCordonedReceivesNoNewPartitions"
+        },
+        {
+          "criterion": "ACC29",
+          "line": 269,
+          "note": "Probe testAcc29 passes: alterReplicaLogDirs to a cordoned directory gets InvalidReplicaAssignmentException.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testAlterReplicaLogDirsToCordonedDirectory"
+        },
+        {
+          "criterion": "ACC30",
+          "line": 342,
+          "note": "Probe testAcc30 passes: with the cordoned directory suggested, four new logs are all created in the uncordoned directory.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testBrokerDoesNotCreateReplicaInCordonedDirectory"
+        },
+        {
+          "criterion": "ACC31",
+          "line": 388,
+          "note": "Probe testAcc31and32 passes: isCordoned() is true for the cordoned directory and false for the other.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testDescribeLogDirsReportsCordonedState"
+        },
+        {
+          "criterion": "ACC32",
+          "line": 365,
+          "note": "Probe testAcc31and32 passes: CordonedLogDirectoryCount is 1 and both per-directory gauges are registered.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testCordonedLogDirectoryMetrics"
+        },
+        {
+          "criterion": "ACC33",
+          "line": 183,
+          "note": "Probe testAcc25to28 passes on an embedded cluster: cordon and uncordon through Admin, with the placement and error outcomes asserted.",
+          "probe": {
+            "path": "server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java"
+          },
+          "probe_base": "does_not_build",
+          "probe_outcome": "verified",
+          "status": "covered",
+          "test": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java::testCordonedLogDirectoriesAreNotUsedForNewPartitions"
+        }
+      ],
+      "session_id": "53df96e0-600e-49c7-8e18-28d64057a048",
+      "status": "committed"
+    }
+  },
+  "updated_at": "2026-10-17T21:59:23+00:00",
+  "worktree": "/work/aih/worktrees/20261017T204940Z-f0d81e"
+}

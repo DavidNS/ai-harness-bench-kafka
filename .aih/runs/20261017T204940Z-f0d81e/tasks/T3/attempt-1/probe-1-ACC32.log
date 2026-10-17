@@ -1,0 +1,139 @@
++ java -cp gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :server:cleanTest :server:test --continue -x :server:checkstyleMain -x :server:checkstyleTest -x :server:spotbugsMain -x :server:spotbugsTest --tests org.apache.kafka.server.aih_probeCordonTest
+
+> Configure project :
+Starting build with version 4.3.0-SNAPSHOT (commit id unknown) using Gradle 9.2.1, Java 17 and Scala 2.13.18
+Build properties: ignoreFailures=false, maxParallelForks=4, maxScalacThreads=8, maxTestRetries=0
+
+> Task :coordinator-common:processResources NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :server-common:processResources NO-SOURCE
+> Task :raft:processResources UP-TO-DATE
+> Task :server-common:createVersionFile UP-TO-DATE
+> Task :raft:createVersionFile UP-TO-DATE
+> Task :server:cleanTest
+> Task :metadata:processResources UP-TO-DATE
+> Task :server:processResources NO-SOURCE
+> Task :storage:processResources UP-TO-DATE
+> Task :server:createVersionFile UP-TO-DATE
+> Task :share-coordinator:processResources UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:processResources NO-SOURCE
+> Task :tools:tools-api:processResources NO-SOURCE
+> Task :storage:storage-api:processResources NO-SOURCE
+> Task :group-coordinator:processResources UP-TO-DATE
+> Task :storage:createVersionFile UP-TO-DATE
+> Task :transaction-coordinator:processResources UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:createVersionFile UP-TO-DATE
+> Task :server-common:processTestResources UP-TO-DATE
+> Task :test-common:test-common-internal-api:processResources NO-SOURCE
+> Task :server:processTestResources UP-TO-DATE
+> Task :tools:tools-api:createVersionFile UP-TO-DATE
+> Task :storage:storage-api:createVersionFile UP-TO-DATE
+> Task :test-common:test-common-runtime:processResources UP-TO-DATE
+> Task :storage:storage-api:processTestResources UP-TO-DATE
+> Task :clients:processResources UP-TO-DATE
+> Task :clients:createVersionFile UP-TO-DATE
+> Task :test-common:test-common-util:compileJava UP-TO-DATE
+> Task :test-common:test-common-util:processResources UP-TO-DATE
+> Task :test-common:test-common-util:classes UP-TO-DATE
+> Task :clients:processTestResources UP-TO-DATE
+> Task :test-common:test-common-util:jar UP-TO-DATE
+> Task :generator:compileJava UP-TO-DATE
+> Task :generator:processResources NO-SOURCE
+> Task :generator:classes UP-TO-DATE
+> Task :generator:jar UP-TO-DATE
+> Task :metadata:processMessages UP-TO-DATE
+> Task :raft:processMessages UP-TO-DATE
+> Task :share-coordinator:processMessages UP-TO-DATE
+> Task :transaction-coordinator:processMessages UP-TO-DATE
+> Task :storage:processMessages UP-TO-DATE
+> Task :group-coordinator:processMessages UP-TO-DATE
+> Task :clients:processMessages UP-TO-DATE
+> Task :clients:compileJava UP-TO-DATE
+> Task :clients:classes UP-TO-DATE
+> Task :clients:processTestMessages UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:compileJava UP-TO-DATE
+> Task :tools:tools-api:compileJava UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:classes UP-TO-DATE
+> Task :tools:tools-api:classes UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:jar UP-TO-DATE
+> Task :tools:tools-api:jar UP-TO-DATE
+> Task :server-common:compileJava UP-TO-DATE
+> Task :server-common:classes UP-TO-DATE
+> Task :server-common:jar UP-TO-DATE
+> Task :storage:storage-api:compileJava UP-TO-DATE
+> Task :storage:storage-api:classes UP-TO-DATE
+> Task :test-common:test-common-internal-api:compileJava UP-TO-DATE
+> Task :test-common:test-common-internal-api:classes UP-TO-DATE
+> Task :test-common:test-common-internal-api:jar UP-TO-DATE
+> Task :storage:storage-api:jar UP-TO-DATE
+> Task :storage:compileJava UP-TO-DATE
+> Task :storage:classes UP-TO-DATE
+> Task :storage:jar UP-TO-DATE
+> Task :raft:compileJava UP-TO-DATE
+> Task :raft:classes UP-TO-DATE
+> Task :raft:jar UP-TO-DATE
+> Task :clients:compileTestJava UP-TO-DATE
+> Task :metadata:compileJava UP-TO-DATE
+> Task :metadata:classes UP-TO-DATE
+> Task :metadata:jar UP-TO-DATE
+> Task :clients:shadowJar UP-TO-DATE
+> Task :clients:jar SKIPPED
+> Task :clients:testClasses UP-TO-DATE
+> Task :coordinator-common:compileJava UP-TO-DATE
+> Task :coordinator-common:classes UP-TO-DATE
+> Task :storage:storage-api:compileTestJava UP-TO-DATE
+> Task :storage:storage-api:testClasses UP-TO-DATE
+> Task :coordinator-common:jar UP-TO-DATE
+> Task :share-coordinator:compileJava UP-TO-DATE
+> Task :share-coordinator:classes UP-TO-DATE
+> Task :transaction-coordinator:compileJava UP-TO-DATE
+> Task :transaction-coordinator:classes UP-TO-DATE
+> Task :share-coordinator:jar UP-TO-DATE
+> Task :server-common:compileTestJava UP-TO-DATE
+> Task :transaction-coordinator:jar UP-TO-DATE
+> Task :server-common:testClasses UP-TO-DATE
+> Task :group-coordinator:compileJava UP-TO-DATE
+> Task :group-coordinator:classes UP-TO-DATE
+> Task :group-coordinator:jar UP-TO-DATE
+> Task :server:compileJava UP-TO-DATE
+> Task :server:classes UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :server:jar UP-TO-DATE
+> Task :core:compileScala UP-TO-DATE
+> Task :core:classes UP-TO-DATE
+> Task :test-common:test-common-runtime:compileJava UP-TO-DATE
+> Task :test-common:test-common-runtime:classes UP-TO-DATE
+> Task :core:copyDependantLibs UP-TO-DATE
+> Task :test-common:test-common-runtime:jar UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :server:compileTestJava UP-TO-DATE
+> Task :server:testClasses UP-TO-DATE
+
+> Task :server:test
+
+Gradle Test Run :server:test > Gradle Test Executor 64 > aih_probeCordonTest > testAcc23() > testAcc23 [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 64 > aih_probeCordonTest > testAcc24() > testAcc24 [1] Type=Raft-Isolated, MetadataVersion=4.2-IV1,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 64 > aih_probeCordonTest > testAcc29() > testAcc29 [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 64 > aih_probeCordonTest > testAcc30() > testAcc30 [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 64 > aih_probeCordonTest > testAcc31and32() > testAcc31and32 [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 64 > aih_probeCordonTest > testAcc25to28() > testAcc25to28 [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+> Task :server:copyTestXml SKIPPED
+
+[Incubating] Problems report is available at: file:///work/aih/worktrees/20261017T204940Z-f0d81e/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 12s
+72 actionable tasks: 2 executed, 70 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.2.1/userguide/configuration_cache_enabling.html
+

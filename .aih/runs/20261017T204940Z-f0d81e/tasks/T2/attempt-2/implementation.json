@@ -1,0 +1,15 @@
+{
+  "criteria_notes": [
+    {
+      "criterion": "ACC20",
+      "note": "LogDirDescription.isCordoned() is asserted in CordonedLogDirsIntegrationTest via Admin describeLogDirs. The printed 'isCordoned' field of LogDirsCommand is untested because the tools-module test file is outside this task's scope (write blocked by the scope hook)."
+    }
+  ],
+  "replan_request": {
+    "files": [
+      "tools/src/test/java/org/apache/kafka/tools/LogDirsCommandTest.java"
+    ],
+    "reason": "ACC20 needs a test of LogDirsCommand's printed 'isCordoned' field. LogDirsCommand is in the tools module, not reachable from server-module tests, and the scope hook blocks creating or editing any tools test file. Add a tools test file (the existing LogDirsCommandTest.java, or a new one) to this task's files."
+  },
+  "summary": "No code change in this pass. I tried to add a tools-module test for the printed 'isCordoned' field; the scope hook blocked it because no tools test file is in this task's files, and server-module tests cannot reach LogDirsCommand. The production change (LogDirsCommand prints 'isCordoned' per log dir) and the Admin-level isCordoned() assertions in CordonedLogDirsIntegrationTest are in place; the tool-output test remains unwritten and needs the replan below."
+}

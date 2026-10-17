@@ -1,0 +1,67 @@
+{
+  "constraints": [
+    "Existing test suites must stay green",
+    "Do not change unrelated behaviour",
+    "Feature requires metadata version 4.3-IV0 (already defined, not yet production)"
+  ],
+  "intents": [
+    {
+      "id": "INTENT1",
+      "key": "config",
+      "text": "Add broker config `cordoned.log.dirs` (list, default empty, low importance), settable statically and dynamically per broker via Admin/kafka-configs.sh, validated so entries are in log.dirs/log.dir or `*` (all), with removal uncordoning."
+    },
+    {
+      "id": "INTENT2",
+      "key": "mv-gating",
+      "text": "Gate the feature on metadata version 4.3-IV0: below it, dynamic setting is rejected with a configuration error and a static setting has no effect."
+    },
+    {
+      "id": "INTENT3",
+      "key": "heartbeat",
+      "text": "Brokers report their cordoned directories to the controller in broker heartbeats once caught up with metadata, so dynamic changes apply without restart."
+    },
+    {
+      "id": "INTENT4",
+      "key": "placement-auto",
+      "text": "Topic and partition creation without explicit assignments uses only brokers with at least one uncordoned directory, failing with INVALID_REPLICATION_FACTOR if too few remain."
+    },
+    {
+      "id": "INTENT5",
+      "key": "placement-explicit",
+      "text": "Explicit assignments onto a broker with no uncordoned directory fail with INVALID_REPLICA_ASSIGNMENT."
+    },
+    {
+      "id": "INTENT6",
+      "key": "reassignment",
+      "text": "Partition reassignments onto a broker with no uncordoned directory fail with INELIGIBLE_REPLICA."
+    },
+    {
+      "id": "INTENT7",
+      "key": "alter-log-dirs",
+      "text": "AlterReplicaLogDirs moving a replica onto a cordoned directory fails with INVALID_REPLICA_ASSIGNMENT."
+    },
+    {
+      "id": "INTENT8",
+      "key": "broker-dir-choice",
+      "text": "The broker never selects a cordoned directory for a new replica, regardless of the directory the controller suggested."
+    },
+    {
+      "id": "INTENT9",
+      "key": "describe-log-dirs",
+      "text": "DescribeLogDirs reports cordoned state per directory: LogDirDescription gets an isCordoned() accessor and the log dirs tool prints it."
+    },
+    {
+      "id": "INTENT10",
+      "key": "metrics",
+      "text": "Add metrics kafka.log:type=LogManager,name=LogDirectoryCordoned,logDirectory=<path> (1/0) and kafka.log:type=LogManager,name=CordonedLogDirectoryCount."
+    },
+    {
+      "id": "INTENT11",
+      "key": "tests",
+      "text": "Add an integration test on an embedded cluster that cordons/uncordons via Admin and checks partition placement and returned errors, plus unit tests for changed components."
+    }
+  ],
+  "request": "Implement KIP-1066, \"Mechanism to cordon log directories\", in the Kafka broker and controller.\n\nOperators need to stop new partitions from landing on a log directory (or on a whole broker)\nwithout taking it out of service: a cordoned directory keeps serving its existing partitions, but\nthe controller must not place any new partition on it, and a broker whose directories are all\ncordoned must not receive new partitions at all. This is the building block for decommissioning\nbrokers and for rebalancing uneven JBOD disks.\n\nBehaviour to deliver:\n\n- A new broker configuration `cordoned.log.dirs` (comma-separated list, default empty, low\n  importance), settable in the properties file and dynamically per broker through the Admin\n  client and `kafka-configs.sh`. Entries must be directories listed in `log.dirs`/`log.dir`;\n  `*` cordons all of them. Removing an entry uncordons the directory.\n- The feature is gated by the metadata version: it needs 4.3-IV0 (already defined, not yet\n  production). Below that, setting the config dynamically is rejected with a configuration\n  error, and a static setting has no effect.\n- Brokers report their cordoned directories to the controller in their heartbeats once they have\n  caught up with metadata, so dynamic changes take effect without a restart.\n- Placement: topic and partition creation without explicit assignments only uses brokers that\n  have at least one uncordoned directory; if that leaves too few brokers for the replication\n  factor the request fails with INVALID_REPLICATION_FACTOR. Explicit assignments onto a broker\n  with no uncordoned directory fail with INVALID_REPLICA_ASSIGNMENT. Partition reassignments onto\n  such a broker fail with INELIGIBLE_REPLICA. Moving a replica onto a cordoned directory with\n  AlterReplicaLogDirs fails with INVALID_REPLICA_ASSIGNMENT. The broker never picks a cordoned directory\n  for a new replica, whatever directory the controller suggested.\n- `DescribeLogDirs` shows whether each directory is cordoned: the Admin client's `LogDirDescription`\n  gets an `isCordoned()` accessor, and the log dirs tool prints it.\n- Metrics: `kafka.log:type=LogManager,name=LogDirectoryCordoned,logDirectory=<path>` (1 or 0)\n  and `kafka.log:type=LogManager,name=CordonedLogDirectoryCount`.\n\nAdd an integration test against a real embedded cluster that cordons and uncordons directories\nthrough the Admin client and checks where new partitions land and which errors are returned, plus\nunit tests for the pieces you change. The existing test suites must stay green. Do not change\nunrelated behaviour.",
+  "rounds": [],
+  "summary": ""
+}

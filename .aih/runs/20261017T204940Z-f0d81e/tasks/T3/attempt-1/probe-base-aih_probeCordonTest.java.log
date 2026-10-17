@@ -1,0 +1,284 @@
++ java -cp gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :server:cleanTest :server:test --continue -x :server:checkstyleMain -x :server:checkstyleTest -x :server:spotbugsMain -x :server:spotbugsTest --tests org.apache.kafka.server.aih_probeCordonTest
+TE
+> Task :server-common:jar UP-TO-DATE
+> Task :storage:storage-api:compileJava UP-TO-DATE
+> Task :storage:storage-api:classes UP-TO-DATE
+> Task :storage:storage-api:jar UP-TO-DATE
+> Task :test-common:test-common-internal-api:compileJava UP-TO-DATE
+> Task :test-common:test-common-internal-api:classes UP-TO-DATE
+> Task :test-common:test-common-internal-api:jar UP-TO-DATE
+> Task :storage:compileJava UP-TO-DATE
+> Task :storage:classes UP-TO-DATE
+> Task :storage:jar UP-TO-DATE
+> Task :raft:compileJava UP-TO-DATE
+> Task :raft:classes UP-TO-DATE
+> Task :raft:jar UP-TO-DATE
+> Task :clients:compileTestJava UP-TO-DATE
+> Task :metadata:compileJava UP-TO-DATE
+> Task :metadata:classes UP-TO-DATE
+> Task :clients:shadowJar UP-TO-DATE
+> Task :metadata:jar UP-TO-DATE
+> Task :clients:jar SKIPPED
+> Task :clients:testClasses UP-TO-DATE
+> Task :storage:storage-api:compileTestJava UP-TO-DATE
+> Task :coordinator-common:compileJava UP-TO-DATE
+> Task :coordinator-common:classes UP-TO-DATE
+> Task :storage:storage-api:testClasses UP-TO-DATE
+> Task :coordinator-common:jar UP-TO-DATE
+> Task :share-coordinator:compileJava UP-TO-DATE
+> Task :transaction-coordinator:compileJava UP-TO-DATE
+> Task :share-coordinator:classes UP-TO-DATE
+> Task :server-common:compileTestJava UP-TO-DATE
+> Task :transaction-coordinator:classes UP-TO-DATE
+> Task :server-common:testClasses UP-TO-DATE
+> Task :share-coordinator:jar UP-TO-DATE
+> Task :transaction-coordinator:jar UP-TO-DATE
+> Task :group-coordinator:compileJava UP-TO-DATE
+> Task :group-coordinator:classes UP-TO-DATE
+> Task :group-coordinator:jar UP-TO-DATE
+> Task :server:compileJava UP-TO-DATE
+> Task :server:classes UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :server:jar UP-TO-DATE
+> Task :core:compileScala UP-TO-DATE
+> Task :core:classes UP-TO-DATE
+> Task :test-common:test-common-runtime:compileJava UP-TO-DATE
+> Task :test-common:test-common-runtime:classes UP-TO-DATE
+> Task :core:copyDependantLibs UP-TO-DATE
+> Task :test-common:test-common-runtime:jar UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+
+> Task :server:compileTestJava FAILED
+
+[Incubating] Problems report is available at: file:///work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+71 actionable tasks: 1 executed, 70 up-to-date
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:241: error: cannot find symbol
+        @ClusterConfigProperty(id = 1, key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                             ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:241: error: cannot find symbol
+        @ClusterConfigProperty(id = 1, key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                                                                                ^
+  symbol:   variable CORDONED_LOG_DIRS_ALL
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:305: error: cannot find symbol
+        @ClusterConfigProperty(key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                     ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:305: error: cannot find symbol
+        @ClusterConfigProperty(key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                                                                        ^
+  symbol:   variable CORDONED_LOG_DIRS_ALL
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:95: error: cannot find symbol
+            new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value), AlterConfigOp.OpType.SET)))).all().get();
+                                            ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:100: error: cannot find symbol
+            new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, null), AlterConfigOp.OpType.DELETE)))).all().get();
+                                            ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:113: error: cannot find symbol
+            .filter(e -> e.getValue().isCordoned())
+                                     ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:193: error: cannot find symbol
+            setCordoned(admin, 0, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                  ^
+  symbol:   variable CORDONED_LOG_DIRS_ALL
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:201: error: cannot find symbol
+            setCordoned(admin, 2, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                  ^
+  symbol:   variable CORDONED_LOG_DIRS_ALL
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:293: error: cannot find symbol
+                    new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, ServerLogConfigs.CORDONED_LOG_DIRS_ALL),
+                                                    ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:293: error: cannot find symbol
+                    new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, ServerLogConfigs.CORDONED_LOG_DIRS_ALL),
+                                                                                               ^
+  symbol:   variable CORDONED_LOG_DIRS_ALL
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:335: error: cannot find symbol
+            TestUtils.waitForCondition(() -> logManager.isCordoned(cordonedDir), WAIT_MS, "The log manager did not cordon the directory");
+                                                       ^
+  symbol:   method isCordoned(String)
+  location: variable logManager of type LogManager
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:346: error: cannot find symbol
+            setCordoned(admin, 0, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                  ^
+  symbol:   variable CORDONED_LOG_DIRS_ALL
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:368: error: cannot find symbol
+            setCordoned(admin, 0, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                  ^
+  symbol:   variable CORDONED_LOG_DIRS_ALL
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:382: error: cannot find symbol
+            assertFalse(logDirs(admin, 0).get(dirs.get(0)).isCordoned());
+                                                          ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:383: error: cannot find symbol
+            assertFalse(logDirs(admin, 0).get(dirs.get(1)).isCordoned());
+                                                          ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:387: error: cannot find symbol
+            assertFalse(logDirs(admin, 0).get(dirs.get(0)).isCordoned());
+                                                          ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:388: error: cannot find symbol
+            assertTrue(logDirs(admin, 0).get(dirs.get(1)).isCordoned());
+                                                         ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java:64: error: cannot find symbol
+        return dirs(admin, id).entrySet().stream().filter(e -> e.getValue().isCordoned())
+                                                                           ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java:159: error: cannot find symbol
+            TestUtils.waitForCondition(() -> lm.isCordoned(ds.get(0)), 60_000, "lm");
+                                               ^
+  symbol:   method isCordoned(String)
+  location: variable lm of type LogManager
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java:174: error: cannot find symbol
+            assertFalse(dirs(admin, 0).get(ds.get(0)).isCordoned());
+                                                     ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+21 errors
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':server:compileTestJava'.
+> Compilation failed; see the compiler output below.
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:241: error: cannot find symbol
+          @ClusterConfigProperty(id = 1, key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                               ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:241: error: cannot find symbol
+          @ClusterConfigProperty(id = 1, key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                                                                                  ^
+    symbol:   variable CORDONED_LOG_DIRS_ALL
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:305: error: cannot find symbol
+          @ClusterConfigProperty(key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                       ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:305: error: cannot find symbol
+          @ClusterConfigProperty(key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+                                                                                                          ^
+    symbol:   variable CORDONED_LOG_DIRS_ALL
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:95: error: cannot find symbol
+              new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value), AlterConfigOp.OpType.SET)))).all().get();
+                                              ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:100: error: cannot find symbol
+              new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, null), AlterConfigOp.OpType.DELETE)))).all().get();
+                                              ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:193: error: cannot find symbol
+              setCordoned(admin, 0, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                    ^
+    symbol:   variable CORDONED_LOG_DIRS_ALL
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:201: error: cannot find symbol
+              setCordoned(admin, 2, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                    ^
+    symbol:   variable CORDONED_LOG_DIRS_ALL
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:293: error: cannot find symbol
+                      new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, ServerLogConfigs.CORDONED_LOG_DIRS_ALL),
+                                                      ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:293: error: cannot find symbol
+                      new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, ServerLogConfigs.CORDONED_LOG_DIRS_ALL),
+                                                                                                 ^
+    symbol:   variable CORDONED_LOG_DIRS_ALL
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:346: error: cannot find symbol
+              setCordoned(admin, 0, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                    ^
+    symbol:   variable CORDONED_LOG_DIRS_ALL
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:368: error: cannot find symbol
+              setCordoned(admin, 0, ServerLogConfigs.CORDONED_LOG_DIRS_ALL);
+                                                    ^
+    symbol:   variable CORDONED_LOG_DIRS_ALL
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:113: error: cannot find symbol
+              .filter(e -> e.getValue().isCordoned())
+                                       ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:335: error: cannot find symbol
+              TestUtils.waitForCondition(() -> logManager.isCordoned(cordonedDir), WAIT_MS, "The log manager did not cordon the directory");
+                                                         ^
+    symbol:   method isCordoned(String)
+    location: variable logManager of type LogManager
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:382: error: cannot find symbol
+              assertFalse(logDirs(admin, 0).get(dirs.get(0)).isCordoned());
+                                                            ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:383: error: cannot find symbol
+              assertFalse(logDirs(admin, 0).get(dirs.get(1)).isCordoned());
+                                                            ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:387: error: cannot find symbol
+              assertFalse(logDirs(admin, 0).get(dirs.get(0)).isCordoned());
+                                                            ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:388: error: cannot find symbol
+              assertTrue(logDirs(admin, 0).get(dirs.get(1)).isCordoned());
+                                                           ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java:64: error: cannot find symbol
+          return dirs(admin, id).entrySet().stream().filter(e -> e.getValue().isCordoned())
+                                                                             ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java:159: error: cannot find symbol
+              TestUtils.waitForCondition(() -> lm.isCordoned(ds.get(0)), 60_000, "lm");
+                                                 ^
+    symbol:   method isCordoned(String)
+    location: variable lm of type LogManager
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonTest.java:174: error: cannot find symbol
+              assertFalse(dirs(admin, 0).get(ds.get(0)).isCordoned());
+                                                       ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  21 errors
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+
+BUILD FAILED in 2s
+

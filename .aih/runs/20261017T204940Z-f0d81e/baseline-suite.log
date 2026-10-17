@@ -1,0 +1,987 @@
+Starting a Gradle Daemon, 3 busy and 2 incompatible and 1 stopped Daemons could not be reused, use --status for details
+
+> Configure project :
+Starting build with version 4.3.0-SNAPSHOT (commit id unknown) using Gradle 9.2.1, Java 17 and Scala 2.13.18
+Build properties: ignoreFailures=false, maxParallelForks=4, maxScalacThreads=8, maxTestRetries=0
+
+> Task :core:processResources NO-SOURCE
+> Task :coordinator-common:processResources NO-SOURCE
+> Task :server-common:processResources NO-SOURCE
+> Task :group-coordinator:group-coordinator-api:processResources NO-SOURCE
+> Task :server:cleanTest UP-TO-DATE
+> Task :server:processResources NO-SOURCE
+> Task :server-common:createVersionFile
+> Task :server:createVersionFile
+> Task :group-coordinator:group-coordinator-api:createVersionFile
+> Task :tools:tools-api:processResources NO-SOURCE
+> Task :raft:processResources
+> Task :server-common:processTestResources
+> Task :transaction-coordinator:processResources
+> Task :share-coordinator:processResources
+> Task :storage:processResources
+> Task :tools:tools-api:createVersionFile
+> Task :metadata:processResources
+> Task :storage:storage-api:processResources NO-SOURCE
+> Task :test-common:test-common-internal-api:processResources NO-SOURCE
+> Task :raft:createVersionFile
+> Task :server:processTestResources
+> Task :storage:createVersionFile
+> Task :group-coordinator:processResources
+> Task :storage:storage-api:createVersionFile
+> Task :test-common:test-common-runtime:processResources
+> Task :storage:storage-api:processTestResources
+> Task :clients:processResources
+> Task :clients:createVersionFile
+> Task :clients:processTestResources
+> Task :test-common:test-common-util:compileJava
+> Task :test-common:test-common-util:processResources
+> Task :test-common:test-common-util:classes
+> Task :test-common:test-common-util:jar
+> Task :generator:compileJava
+> Task :generator:processResources NO-SOURCE
+> Task :generator:classes
+> Task :generator:jar
+
+> Task :raft:processMessages
+MessageGenerator: processed 1 Kafka message JSON file(s).
+
+> Task :transaction-coordinator:processMessages
+MessageGenerator: processed 2 Kafka message JSON file(s).
+
+> Task :storage:processMessages
+MessageGenerator: processed 5 Kafka message JSON file(s).
+
+> Task :share-coordinator:processMessages
+MessageGenerator: processed 4 Kafka message JSON file(s).
+
+> Task :metadata:processMessages
+MessageGenerator: processed 26 Kafka message JSON file(s).
+
+> Task :group-coordinator:processMessages
+MessageGenerator: processed 44 Kafka message JSON file(s).
+
+> Task :clients:processMessages
+MessageGenerator: processed 198 Kafka message JSON file(s).
+
+> Task :clients:compileJava
+> Task :clients:classes
+
+> Task :clients:processTestMessages
+MessageGenerator: processed 5 Kafka message JSON file(s).
+
+> Task :tools:tools-api:compileJava
+> Task :group-coordinator:group-coordinator-api:compileJava
+> Task :group-coordinator:group-coordinator-api:classes
+> Task :tools:tools-api:classes
+> Task :tools:tools-api:jar
+> Task :group-coordinator:group-coordinator-api:jar
+> Task :server-common:compileJava
+> Task :server-common:classes
+> Task :server-common:jar
+> Task :test-common:test-common-internal-api:compileJava
+> Task :test-common:test-common-internal-api:classes
+> Task :test-common:test-common-internal-api:jar
+> Task :storage:storage-api:compileJava
+> Task :storage:storage-api:classes
+> Task :storage:storage-api:jar
+> Task :storage:compileJava
+> Task :storage:classes
+> Task :storage:jar
+> Task :raft:compileJava
+> Task :raft:classes
+> Task :raft:jar
+> Task :metadata:compileJava
+> Task :metadata:classes
+> Task :metadata:jar
+> Task :coordinator-common:compileJava
+> Task :coordinator-common:classes
+> Task :coordinator-common:jar
+> Task :transaction-coordinator:compileJava
+> Task :transaction-coordinator:classes
+> Task :transaction-coordinator:jar
+> Task :share-coordinator:compileJava
+> Task :share-coordinator:classes
+> Task :share-coordinator:jar
+> Task :group-coordinator:compileJava
+> Task :group-coordinator:classes
+> Task :group-coordinator:jar
+> Task :server:compileJava
+> Task :server:classes
+> Task :core:compileJava NO-SOURCE
+> Task :server:jar
+
+> Task :clients:compileTestJava
+
+> Task :clients:shadowJar
+> Task :clients:jar SKIPPED
+> Task :clients:testClasses
+> Task :storage:storage-api:compileTestJava
+> Task :storage:storage-api:testClasses
+> Task :server-common:compileTestJava
+> Task :server-common:testClasses
+> Task :core:compileScala
+> Task :core:classes
+> Task :core:copyDependantLibs
+> Task :core:jar
+> Task :test-common:test-common-runtime:compileJava
+> Task :test-common:test-common-runtime:classes
+> Task :test-common:test-common-runtime:jar
+> Task :server:compileTestJava
+> Task :server:testClasses
+
+> Task :server:test
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AssignmentsManagerDeadlineFunctionTest > applyAfterDispatchIntervalWithExistingEarlierDeadline() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AssignmentsManagerDeadlineFunctionTest > applyAfterDispatchInterval() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AssignmentsManagerDeadlineFunctionTest > applyBackoffInterval() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testListenerListToEndPointsWithWildcard() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AssignmentsManagerDeadlineFunctionTest > scheduleImmediatelyWhenOverloaded() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testDefaultNameToSecurityProto() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AssignmentsManagerDeadlineFunctionTest > doNotScheduleImmediatelyWhenOverloadedIfThereAreInFlightRequests() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AssignmentsManagerDeadlineFunctionTest > doNotScheduleImmediatelyWhenOverloadedIfThereArePreviousGlobalFailures() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AssignmentsManagerDeadlineFunctionTest > applyBackoffIntervalWithExistingEarlierDeadline() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testListenerListToEndPointsWithUnderscores() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testListenerListToEndPointsWithEmptyString() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testAnotherListenerListToEndPointsWithIpV6() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testListenerListToEndPointsWithOneEndpoint() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testListenerListToEndPointsWithBlankString() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testAnotherListenerListToEndPointsWithNonDefaultProtoMap() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > SocketServerConfigsTest > testListenerListToEndPointsWithIpV6() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentTest > testValidAssignment() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentTest > testAssignmentToString() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentTest > testAssignmentReplicaNotOnBrokerIsNotValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentTest > testAssignmentForNonExistentTopicIsNotValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentTest > testAssignmentForNonExistentPartitionIsNotValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testGlobalResponseErrorEmptyResponse() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > RequestConvertToJsonTest > testAllResponseTypesHandled() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > RequestConvertToJsonTest > testAllRequestTypesHandled() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > RequestConvertToJsonTest > testAllApiVersionsResponseHandled() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > RequestConvertToJsonTest > testClientInfoNode() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testGlobalResponseErrorResponseLevelError() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testGlobalResponseErrorDisconnectedTimedOut() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testGlobalResponseErrorTimeout() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testStartAndShutdown() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testSuccessfulAssignment() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testNoGlobalResponseError() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testBuildRequestData() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testGlobalResponseErrorAuthenticationException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testGlobalResponseErrorUnsupportedVersionException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testUnSuccessfulRequestCausesRetransmission(String) > "testUnSuccessfulRequestCausesRetransmission(String).failureType=invalidRequest" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testUnSuccessfulRequestCausesRetransmission(String) > "testUnSuccessfulRequestCausesRetransmission(String).failureType=timeout" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testMismatchedInputDoesNotTriggerCompletion(String) > "testMismatchedInputDoesNotTriggerCompletion(String).mismatchType=missingTopic" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testMismatchedInputDoesNotTriggerCompletion(String) > "testMismatchedInputDoesNotTriggerCompletion(String).mismatchType=missingPartition" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testMismatchedInputDoesNotTriggerCompletion(String) > "testMismatchedInputDoesNotTriggerCompletion(String).mismatchType=notReplica" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testGlobalResponseErrorClassCastException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testOneAssignmentFailsOneSucceeds(String) > "testOneAssignmentFailsOneSucceeds(String).failureType=missingResult" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > AssignmentsManagerTest > testOneAssignmentFailsOneSucceeds(String) > "testOneAssignmentFailsOneSucceeds(String).failureType=errorResult" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testDivergingEpoch() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testCachedPartitionEqualsAndHashCode() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchSessionCache_RoundRobinsIntoShards_WhenIntegerOverflows() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchRequests() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchSessionWithUnknownId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchSessionCache_RoundRobinsIntoShards() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testIncrementalFetchSessionWithoutIdsWhenSessionUsesIds() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testIncrementalFetchSessionWithIdsWhenSessionDoesNotUseIds() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testIncrementalFetchSession(boolean) > "testIncrementalFetchSession(boolean).usesTopicIds=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testIncrementalFetchSession(boolean) > "testIncrementalFetchSession(boolean).usesTopicIds=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testCachedLeaderEpoch() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testToForgetPartitions(boolean, boolean) > "testToForgetPartitions(boolean, boolean).fooStartsResolved=true, fooEndsResolved=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testToForgetPartitions(boolean, boolean) > "testToForgetPartitions(boolean, boolean).fooStartsResolved=true, fooEndsResolved=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testToForgetPartitions(boolean, boolean) > "testToForgetPartitions(boolean, boolean).fooStartsResolved=false, fooEndsResolved=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testToForgetPartitions(boolean, boolean) > "testToForgetPartitions(boolean, boolean).fooStartsResolved=false, fooEndsResolved=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testResizeCachedSessions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testPrivilegedSessionHandling() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchSessionCache_getShardedCache_retrievesCacheFromCorrectSegment() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchSessionUpdateTopicIdsBrokerSide() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testSessionCache() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testLastFetchedEpoch() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testResolveUnknownPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testDeprioritizesPartitionsWithRecordsOnly() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchSessionWithUnknownIdOldRequestVersion() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testFetchSessionExpiration() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testZeroSizeFetchSession() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testMaybeResolveUnknownName() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testNewSessionId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > FetchSessionTest > testUpdateAndGenerateResponseData() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testIncrementalAlterConfigsByControllers(ClusterInstance) > testIncrementalAlterConfigsByControllers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testQuotaConfigsIsReadOnlyShouldBeFalse(ClusterInstance) > testQuotaConfigsIsReadOnlyShouldBeFalse [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > EndToEndClusterIdTest > testEndToEndWithConsumerProtocol() > testEndToEndWithConsumerProtocol [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testIncrementalAlterConfigsByAllControllersWithDynamicQuorum(ClusterInstance) > testIncrementalAlterConfigsByAllControllersWithDynamicQuorum [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testIncrementalAlterConfigs(ClusterInstance) > testIncrementalAlterConfigs [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > EndToEndClusterIdTest > testEndToEndWithConsumerProtocol() > testEndToEndWithConsumerProtocol [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testAcls(ClusterInstance) > testAcls [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testDescribeMetadataQuorum(ClusterInstance) > testDescribeMetadataQuorum [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testAclsByControllers(ClusterInstance) > testAclsByControllers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > EndToEndClusterIdTest > testEndToEndWithClassicProtocol() > testEndToEndWithClassicProtocol [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testDescribeFeaturesByControllers(ClusterInstance) > testDescribeFeaturesByControllers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testUpdateFeatures(ClusterInstance) > testUpdateFeatures [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testPutBrokersInBootstrapControllersConfig(ClusterInstance) > testPutBrokersInBootstrapControllersConfig [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndRestartControllerNode() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testAuthorizerFailureFoundInControllerStartup() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testPutControllersInBootstrapBrokersConfig(ClusterInstance) > testPutControllersInBootstrapBrokersConfig [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > EndToEndClusterIdTest > testEndToEndWithClassicProtocol() > testEndToEndWithClassicProtocol [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > AuthorizerUtilsTest > testCreateAuthorizer(ProcessRole) > "testCreateAuthorizer(ProcessRole).role=broker" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > AuthorizerUtilsTest > testCreateAuthorizer(ProcessRole) > "testCreateAuthorizer(ProcessRole).role=controller" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > BrokerFeaturesTest > testIncompatibilitiesDueToAbsentFeature() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > BrokerFeaturesTest > testEmpty() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > BrokerFeaturesTest > ensureDefaultSupportedFeaturesRangeMaxNotZero(boolean) > "ensureDefaultSupportedFeaturesRangeMaxNotZero(boolean).unstableVersionsEnabled=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > BrokerFeaturesTest > ensureDefaultSupportedFeaturesRangeMaxNotZero(boolean) > "ensureDefaultSupportedFeaturesRangeMaxNotZero(boolean).unstableVersionsEnabled=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > BrokerFeaturesTest > testIncompatibilitiesDueToIncompatibleFeature() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > BrokerFeaturesTest > testCompatibleFeatures() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > BrokerFeaturesTest > testDefaultFinalizedFeatures() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryCompressionTypeInvalid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryMetricsTooLarge() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetrySameClientImmediateRetryFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testUpdateSubscriptionWithNullProperties() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testUpdateSubscriptionWithInvalidMetricsProperties() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetryAllMetricSubscribedSubscription() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryConcurrentRequestNewClientInstance() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testRemoveConnection() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetryConcurrentRequestAfterSubscriptionUpdate() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testUpdateSubscriptionWithEmptyProperties() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryTerminatingFlag() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testUpdateSubscriptionWithPropertiesDeletion() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryConcurrentRequestAfterSubscriptionUpdate() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testRemoveConnectionUnknownConnectionId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryClientInstanceIdInvalid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetrySubscriptionAfterPushTelemetryUnknownSubscriptionSucceeds() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetrySameClientImmediateRetryAfterPushFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetryAfterPushIntervalTime() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetrySubscriptionAfterPushTelemetryUnknownCompressionSucceeds() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetrySubscriptionAfterPushTelemetryBytesExceptionFails() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testCacheEviction() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetryWithoutSubscription() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetryConcurrentRequestNewClientInstance() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetry() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryAfterPushIntervalTime() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testCacheExpirationTaskCancelledOnInstanceUpdate() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetrySubscriptionIdInvalid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testUsingBootstrapControllersOnUnsupportedAdminApi(ClusterInstance) > testUsingBootstrapControllersOnUnsupportedAdminApi [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testCacheEvictionWithMultipleClients() PASSED
+
+
+> Task :server:test
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testAlterReassignmentsWithBootstrapControllers(ClusterInstance) > testAlterReassignmentsWithBootstrapControllers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryPluginException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetryUpdateSubscription() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testGetTelemetry() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryThrottleError() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryNextRequestPostTerminatingFlag() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testUpdateSubscription() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryNullMetricsData() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsManagerTest > testPushTelemetryOnNewServer() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testDescribeCluster(ClusterInstance) > testDescribeCluster [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+org.apache.kafka.server.LogManagerIntegrationTest.testIOExceptionOnLogSegmentCloseResultsInRecovery()[1] failed, log available in /work/aih/worktrees/20261017T204940Z-f0d81e/server/build/reports/testOutput/org.apache.kafka.server.LogManagerIntegrationTest.testIOExceptionOnLogSegmentCloseResultsInRecovery()[1].test.stdout
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > LogManagerIntegrationTest > testIOExceptionOnLogSegmentCloseResultsInRecovery() > testIOExceptionOnLogSegmentCloseResultsInRecovery [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) FAILED
+    org.opentest4j.AssertionFailedError: Did not expect the clean shutdown file to exist ==> expected: <false> but was: <true>
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+        at app//org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:63)
+        at app//org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:36)
+        at app//org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:239)
+        at app//org.apache.kafka.server.LogManagerIntegrationTest.testIOExceptionOnLogSegmentCloseResultsInRecovery(LogManagerIntegrationTest.java:97)
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testDescribeConfigs(ClusterInstance) > testDescribeConfigs [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testUpdateFeaturesByControllers(ClusterInstance) > testUpdateFeaturesByControllers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testIncrementalAlterConfigsBySingleControllerWithDynamicQuorum(ClusterInstance) > testIncrementalAlterConfigsBySingleControllerWithDynamicQuorum [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testDescribeClusterByControllers(ClusterInstance) > testDescribeClusterByControllers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testDescribeFeatures(ClusterInstance) > testDescribeFeatures [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BootstrapControllersIntegrationTest > testDescribeMetadataQuorumByControllers(ClusterInstance) > testDescribeMetadataQuorumByControllers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerRegistrationRequestTest > shouldRejectZkMigratingBrokerWhenFeatureLevelDoesNotSupportMigration() > shouldRejectZkMigratingBrokerWhenFeatureLevelDoesNotSupportMigration [1] Type=Raft-Isolated, MetadataVersion=3.3-IV3,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerRegistrationRequestTest > shouldRejectRegistrationWhenFeatureLevelTooHigh() > shouldRejectRegistrationWhenFeatureLevelTooHigh [1] Type=Raft-Isolated, MetadataVersion=3.3-IV3,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testIncrementalAlterConfigs() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerRegistrationRequestTest > shouldRejectRegistrationWithoutFeatureLevels() > shouldRejectRegistrationWithoutFeatureLevels [1] Type=Raft-Isolated, MetadataVersion=3.3-IV3,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerRegistrationRequestTest > shouldRegisterWhenSupportedRangeAndNotMigrating() > shouldRegisterWhenSupportedRangeAndNotMigrating [1] Type=Raft-Isolated, MetadataVersion=3.3-IV3,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+
+> Task :server:test
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testCreateTopicWithMetadataContextPassPrincipal() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testCreateTopicWithoutRequestContext() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testCreateTopicWithMetadataContextWhenPrincipalSerdeNotDefined() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testDirectCreateTopicsResponse() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testEnvelopeResponseParsingException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testEnvelopeResponseWithEnvelopeError() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testAuthenticationException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testTimeoutException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testUnexpectedResponseType() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testVersionMismatchException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testEnvelopeResponseSuccessfulParsing() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > KRaftTopicCreatorTest > testEnvelopeResponseWithTopicErrors() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AbstractKafkaConfigTest > testPopulateSynonymsOnEmptyMap() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AbstractKafkaConfigTest > testPopulateSynonymsOnMapWithoutNodeId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AbstractKafkaConfigTest > testPopulateSynonymsOnMapWithoutBrokerId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerServerMetricsTest > testMetricsExported() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerServerMetricsTest > testMetadataLoadErrorCount() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerServerMetricsTest > testLastAppliedRecordOffset() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerServerMetricsTest > testIgnoredStaticVoters() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerServerMetricsTest > testLastAppliedRecordTimestamp() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > BrokerServerMetricsTest > testMetadataApplyErrorCount() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > ClientTelemetryTest > testMultipleDeprecatedReceivers() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > ClientTelemetryTest > testMultipleNewExporters() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > NodeMetricsTest > testMetricsExported(boolean) > "testMetricsExported(boolean).enableUnstableVersions=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > NodeMetricsTest > testMetricsExported(boolean) > "testMetricsExported(boolean).enableUnstableVersions=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > ThrottledChannelExpirationTest > testThrottledChannelDelay() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > EligibleLeaderReplicasIntegrationTest > testElrMemberCanBeElected() > testElrMemberCanBeElected [1] Type=Raft-Isolated, MetadataVersion=4.0-IV1,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > ThrottledChannelExpirationTest > testCallbackInvocationAfterExpiration() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > PartitionMaxBytesStrategyTest > testCheckValidArguments() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > PartitionMaxBytesStrategyTest > testUniformStrategy() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > PartitionMaxBytesStrategyTest > testConstructor() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AddPartitionsToTxnManagerTest > testTransactionCoordinatorResolution() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AddPartitionsToTxnManagerTest > testAddTxnData(boolean) > "testAddTxnData(boolean).isAddPartition=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AddPartitionsToTxnManagerTest > testAddTxnData(boolean) > "testAddTxnData(boolean).isAddPartition=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AddPartitionsToTxnManagerTest > testGenerateRequests(boolean) > "testGenerateRequests(boolean).isAddPartition=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AddPartitionsToTxnManagerTest > testGenerateRequests(boolean) > "testGenerateRequests(boolean).isAddPartition=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AddPartitionsToTxnManagerTest > testAddPartitionsToTxnManagerMetrics() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 5 > AddPartitionsToTxnManagerTest > testAddPartitionsToTxnHandlerErrorHandling() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testClusterWithLowerCaseListeners() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > LogManagerIntegrationTest > testRestartBrokerNoErrorIfMissingPartitionMetadata() > testRestartBrokerNoErrorIfMissingPartitionMetadata [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > EligibleLeaderReplicasIntegrationTest > testElrMemberShouldBeKickOutWhenUncleanShutdown() > testElrMemberShouldBeKickOutWhenUncleanShutdown [1] Type=Raft-Isolated, MetadataVersion=4.0-IV1,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testTopicDeletedAndRecreatedWhileBrokerIsDown() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > LogManagerIntegrationTest > testRestartBrokerNoErrorIfMissingPartitionMetadata() > testRestartBrokerNoErrorIfMissingPartitionMetadata [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > DelegationTokenManagerConfigsTest > testOverride() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > DelegationTokenManagerConfigsTest > testDefaults() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > DelegationTokenManagerConfigsTest > testInvalidProperty(String) > "testInvalidProperty(String).field=delegation.token.max.lifetime.ms" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > DelegationTokenManagerConfigsTest > testInvalidProperty(String) > "testInvalidProperty(String).field=delegation.token.expiry.time.ms" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > DelegationTokenManagerConfigsTest > testInvalidProperty(String) > "testInvalidProperty(String).field=delegation.token.expiry.check.interval.ms" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsInstanceMetadataTest > testIsMatchMultiplePatternValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsInstanceMetadataTest > testIsMatchWithNullValueFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsInstanceMetadataTest > testIsMatchValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsInstanceMetadataTest > testIsMatchMismatchFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ClientMetricsInstanceMetadataTest > testIsMatchWithInvalidKeyFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ForwardingManagerMetricsTest > testQueueLength() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ForwardingManagerMetricsTest > testQueueTimeMs() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ForwardingManagerMetricsTest > testMetricsNames() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ForwardingManagerMetricsTest > testTimeoutMs() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ForwardingManagerMetricsTest > testRemoteTimeMs() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testReconfigureControllerAuthorizer(boolean) > "testReconfigureControllerAuthorizer(boolean).combinedMode=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testReconfigureControllerAuthorizer(boolean) > "testReconfigureControllerAuthorizer(boolean).combinedMode=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterWithAdvertisedHostAndPortDifferentFromSocketServer() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > DelayedFutureTest > testDelayedFuture() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testUpdateFetchState() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testResetReplicaStateWhenLeaderIsReelectedAndReplicaIsNotInSync() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testResetReplicaStateWhenLeaderIsReelectedAndReplicaIsInSync() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testIsCaughtUpWhenReplicaIsNotCaughtUpToLogEnd() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testIsCaughtUpWhenReplicaIsCaughtUpToLogEnd() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testResetReplicaStateWhenNewLeaderIsElectedAndReplicaIsInSync() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testFenceStaleUpdates() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testInitialState() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ReplicaTest > testResetReplicaStateWhenNewLeaderIsElectedAndReplicaIsNotInSync() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > PartitionRotateStrategyTest > testRoundRobinStrategyWithSpecialSessionEpochs() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > PartitionRotateStrategyTest > testRoundRobinStrategyWithEmptyPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > PartitionRotateStrategyTest > testRoundRobinStrategy() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testNoShareGroupListenerRegistered() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testRemoveConnection() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testResizeCachedSessions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testShareSessionCache() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testShareGroupListenerEvents() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testShareGroupListenerEventsMultipleGroups() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testRemoveAllSessions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > ShareSessionCacheTest > testShareGroupListenerEventsOnStaleSession() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testMockSchedulerNonPeriodicTask() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testUnscheduleProducerTask() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testMockSchedulerPeriodicTask() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testNonPeriodicTask() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testRestart() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testReentrantTaskInMockScheduler() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testNonPeriodicTaskWhenPeriodIsZero() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testMockSchedulerLocking() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testPeriodicTask() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 3 > SchedulerTest > testPendingTaskSize() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testSnapshotCount() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testOldBootstrapMetadataFile() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testDescribeKRaftVersion(boolean) > "testDescribeKRaftVersion(boolean).usingBootstrapControllers=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testDescribeKRaftVersion(boolean) > "testDescribeKRaftVersion(boolean).usingBootstrapControllers=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testOverlyLargeCreateTopics() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > EligibleLeaderReplicasIntegrationTest > testHighWatermarkShouldNotAdvanceIfUnderMinIsr() > testHighWatermarkShouldNotAdvanceIfUnderMinIsr [1] Type=Raft-Isolated, MetadataVersion=4.0-IV1,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndRestartBrokerNode() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testSetLog4jConfigurations() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testControllerFailover() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testClientQuotas() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > EligibleLeaderReplicasIntegrationTest > testLastKnownLeaderShouldBeElectedIfEmptyElr() > testLastKnownLeaderShouldBeElectedIfEmptyElr [1] Type=Raft-Isolated, MetadataVersion=4.0-IV1,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testAbandonedFutureReplicaRecovered_mainReplicaInOfflineLogDir() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testReconfigureControllerClientQuotas(boolean) > "testReconfigureControllerClientQuotas(boolean).combinedController=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testReconfigureControllerClientQuotas(boolean) > "testReconfigureControllerClientQuotas(boolean).combinedController=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testIsrAfterBrokerShutDownAndJoinsBack() > testIsrAfterBrokerShutDownAndJoinsBack [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testTimedOutHeartbeats() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testSingleControllerSingleBrokerCluster() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testIsrAfterBrokerShutDownAndJoinsBack() > testIsrAfterBrokerShutDownAndJoinsBack [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testReplicaDownResponse() > testReplicaDownResponse [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testReplicaDownResponse() > testReplicaDownResponse [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testRegisteredControllerEndpoints() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testRack() > testRack [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testRack() > testRack [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testTopicIdsInResponse() > testTopicIdsInResponse [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testTopicIdsInResponse() > testTopicIdsInResponse [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testPartitionInfoPreferredReplica() > testPartitionInfoPreferredReplica [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testPartitionInfoPreferredReplica() > testPartitionInfoPreferredReplica [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testIsInternal() > testIsInternal [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testIsInternal() > testIsInternal [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndPerformReassignment() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAliveBrokersWithNoTopics() > testAliveBrokersWithNoTopics [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testAbandonedFutureReplicaRecovered_mainReplicaInOnlineLogDir() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndClose() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testStartupWithNonDefaultKControllerDynamicConfiguration() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAliveBrokersWithNoTopics() > testAliveBrokersWithNoTopics [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAllTopicsRequest() > testAllTopicsRequest [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAllTopicsRequest() > testAllTopicsRequest [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreatePartitions(String) > "testCreatePartitions(String).metadataVersionString=3.7-IV0" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testClusterIdIsValid() > testClusterIdIsValid [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testClusterIdIsValid() > testClusterIdIsValid [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testNoTopicsRequest() > testNoTopicsRequest [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testNoTopicsRequest() > testNoTopicsRequest [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAutoCreateTopicWithInvalidReplicationFactor() > testAutoCreateTopicWithInvalidReplicationFactor [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAutoCreateTopicWithInvalidReplicationFactor() > testAutoCreateTopicWithInvalidReplicationFactor [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testPreferredReplica() > testPreferredReplica [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testPreferredReplica() > testPreferredReplica [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testClusterIdWithRequestVersion1() > testClusterIdWithRequestVersion1 [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreatePartitions(String) > "testCreatePartitions(String).metadataVersionString=3.7-IV2" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testClusterIdWithRequestVersion1() > testClusterIdWithRequestVersion1 [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testDefaultClientQuotas() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAutoTopicCreation() > testAutoTopicCreation [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MetadataRequestTest > testAutoTopicCreation() > testAutoTopicCreation [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MonitorablePluginsIntegrationTest > testMonitorableServerPlugins(ClusterInstance) > testMonitorableServerPlugins [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > MonitorablePluginsIntegrationTest > testMonitorableServerPlugins(ClusterInstance) > testMonitorableServerPlugins [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > DynamicBrokerConfigTest > testBrokerConfigSynonyms() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientMetricsInstanceTest > testMaybeUpdateGetRequestWithImmediateRetryAfterPushFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientMetricsInstanceTest > testMaybeUpdateGetRequestWithImmediateRetryFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientMetricsInstanceTest > testMaybeUpdatePushRequestWithImmediateRetryFail() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientMetricsInstanceTest > testMaybeUpdateRequestTimestampValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientMetricsInstanceTest > testMaybeUpdatePushRequestWithImmediateRetryAfterGetValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientMetricsInstanceTest > testMaybeUpdateGetRequestAfterElapsedTimeValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientMetricsInstanceTest > testMaybeUpdatePushRequestAfterElapsedTimeValid() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasInvalidRequests() > testAlterClientQuotasInvalidRequests [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasInvalidRequests() > testAlterClientQuotasInvalidRequests [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testDescribeClientQuotasMatchPartial() > testDescribeClientQuotasMatchPartial [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testDescribeClientQuotasMatchPartial() > testDescribeClientQuotasMatchPartial [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterIpQuotasRequest() > testAlterIpQuotasRequest [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterIpQuotasRequest() > testAlterIpQuotasRequest [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasRequestValidateOnly() > testAlterClientQuotasRequestValidateOnly [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasRequestValidateOnly() > testAlterClientQuotasRequestValidateOnly [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testClientQuotasSanitized() > testClientQuotasSanitized [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testUnregisterBroker(boolean) > "testUnregisterBroker(boolean).usingBootstrapControllers=true" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testClientQuotasSanitized() > testClientQuotasSanitized [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasBadIp() > testAlterClientQuotasBadIp [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasBadIp() > testAlterClientQuotasBadIp [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testDescribeClientQuotasInvalidFilterCombination() > testDescribeClientQuotasInvalidFilterCombination [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testDescribeClientQuotasInvalidFilterCombination() > testDescribeClientQuotasInvalidFilterCombination [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testClientQuotasForScramUsers() > testClientQuotasForScramUsers [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testClientQuotasForScramUsers() > testClientQuotasForScramUsers [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testClientQuotasUnsupportedEntityTypes() > testClientQuotasUnsupportedEntityTypes [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testClientQuotasUnsupportedEntityTypes() > testClientQuotasUnsupportedEntityTypes [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasRequest() > testAlterClientQuotasRequest [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasRequest() > testAlterClientQuotasRequest [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testDescribeClientQuotasMatchExact() > testDescribeClientQuotasMatchExact [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testDescribeClientQuotasMatchExact() > testDescribeClientQuotasMatchExact [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasInvalidEntityCombination() > testAlterClientQuotasInvalidEntityCombination [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ClientQuotasRequestTest > testAlterClientQuotasInvalidEntityCombination() > testAlterClientQuotasInvalidEntityCombination [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > CachedSharePartitionTest > testCachedSharePartitionEqualsAndHashCode() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > RecordStateTest > testRecordStateValidateTransition() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > RecordStateTest > testRecordStateForId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ShareSessionKeyTest > testConstructorThrowsExceptionWhenMemberIdIsNull() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ShareSessionKeyTest > testConstructorThrowsExceptionWhenGroupIdIsNull() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > ShareSessionKeyTest > testConstructorThrowsExceptionWhenBothGroupIdAndMemberIdIsNull() PASSED
+
+
+> Task :server:test
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsEmptyPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testMaxRetryAttemptsExhaustedOnTimeout() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsMultiplePartitionsSameLeader() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsNullPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testUnregisterBroker(boolean) > "testUnregisterBroker(boolean).usingBootstrapControllers=false" PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsMissingPartitionInResponse() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsServerError() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testClose() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testLazyInitializationWithEmptyPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsMultiplePartitionsDifferentLeaders() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsVersionMismatch() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsEmptyPartitionLeader() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testLazyInitializationWithNullPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testCloseWithoutInitialization() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsAuthenticationError() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testRetryOnTimeout() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsNullResponse() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testMaxRetryAttemptsExhaustedOnDisconnect() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsMultipleTopics() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsNoNodePartitionLeader() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testLazyInitialization() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsSuccess() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testRetryOnDisconnect() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testListLatestOffsetsNullResponseBody() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 4 > NetworkPartitionMetadataClientTest > testLazyInitializationOnlyOnce() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testDirectToControllerCommunicationFailsOnOlderMetadataVersion() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testDescribeQuorumRequestToBrokers() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testDescribeQuorumRequestToControllers() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterWithAdvertisedPortZero() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndCreateAndManyTopics() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndWaitForBrokerInRunningState() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testUpdateMetadataVersion() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndCreateListDeleteTopic() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testIncreaseNumIoThreads() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testCreateClusterAndCreateTopicWithRemoteLogManagerInstantiation() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > KRaftClusterTest > testRemoteLogManagerInstantiation() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testRemoveAndAddVoterWithValidClusterId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testNewVoterAutoRemovesAndAdds() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testRemoveAndAddSameController() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testCreateAndDestroyReconfigurableCluster() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testRemoveAndAddVoterWithInconsistentClusterId() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testCreateAndDestroyNonReconfigurableCluster() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testControllersAutoJoinStandaloneVoter() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ReconfigurableQuorumIntegrationTest > testRemoveController() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > MinInSyncReplicasConfigTest > testDefaultKafkaConfig(ClusterInstance) > testDefaultKafkaConfig [1] Type=Raft-Isolated, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > MinInSyncReplicasConfigTest > testDefaultKafkaConfig(ClusterInstance) > testDefaultKafkaConfig [2] Type=Raft-Combined, MetadataVersion=4.3-IV0,BrokerSecurityProtocol=PLAINTEXT,BrokerListenerName=ListenerName(EXTERNAL),ControllerSecurityProtocol=PLAINTEXT,ControllerListenerName=ListenerName(CONTROLLER) PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientMetricsTelemetryPluginTest > testExportMetricsWithBothReceiverAndExporter() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientMetricsTelemetryPluginTest > testExportMetricsWithDeprecatedReceiver() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientMetricsTelemetryPluginTest > testExportMetricsWithDualImplementation() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientMetricsTelemetryPluginTest > testExportMetricsWithNewExporter() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > LinuxIoMetricsCollectorTest > testReadProcFile() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > LinuxIoMetricsCollectorTest > testUnableToReadNonexistentProcFile() PASSED
+
+
+> Task :server:test FAILED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientSensorsTest > testConstructorThrowsExceptionWhenThrottleTimeSensorIsNull() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientSensorsTest > testConstructorWithEmptyMap() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientSensorsTest > testConstructorPreservesInputOrder() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientSensorsTest > testConstructorThrowsExceptionWhenQuotaSensorIsNull() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientSensorsTest > testConstructorThrowsExceptionWhenBothSensorsAreNull() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ClientSensorsTest > testConstructorWithValidParameters() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > DelayedShareFetchKeyTest > testDelayedShareFetchEqualsAndHashcode() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testMaybeCompleteWithExceptionPartialFailure() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testMaybeCompleteWithPartialErroneousTopicPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testFilterErroneousTopicPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testMaybeCompleteWithException() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testMaybeCompleteWithExceptionWithExistingErroneousTopicPartition() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testErrorInAllPartitionsWithMultipleTopicIdPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testDontCacheAnyData() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testMaybeCompleteWithErroneousTopicPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareFetchTest > testErrorInAllPartitions() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareSessionTest > testPartitionsToLogStringEmpty() PASSED
+
+Gradle Test Run :server:test > Gradle Test Executor 2 > ShareSessionTest > testPartitionsToLogString() PASSED
+
+> Task :server:copyTestXml SKIPPED
+
+[Incubating] Problems report is available at: file:///work/aih/worktrees/20261017T204940Z-f0d81e/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+72 actionable tasks: 71 executed, 1 up-to-date
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+
+404 tests completed, 1 failed
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':server:test'.
+> There were failing tests. See the report at: file:///work/aih/worktrees/20261017T204940Z-f0d81e/server/build/reports/tests/test/index.html
+
+BUILD FAILED in 5m 23s

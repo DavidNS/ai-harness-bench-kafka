@@ -1,0 +1,58 @@
+{
+  "criteria_notes": [
+    {
+      "criterion": "ACC1",
+      "note": "Blocked: the config cannot be made dynamic without editing DynamicBrokerConfig.java (not in the file list). Not implemented."
+    },
+    {
+      "criterion": "ACC2",
+      "note": "Blocked: the MV gate for dynamic setting needs the controller-side config validator (not in the file list). Not implemented."
+    },
+    {
+      "criterion": "ACC3",
+      "note": "Not started. It depends on the dynamic config (ACC1) and LogManager state."
+    },
+    {
+      "criterion": "ACC4",
+      "note": "Not started. It depends on the cordon state reaching the controller (ACC3)."
+    },
+    {
+      "criterion": "ACC5",
+      "note": "Not started. It depends on the cordon state reaching the controller (ACC3)."
+    },
+    {
+      "criterion": "ACC6",
+      "note": "Not started. It depends on the cordon state reaching the controller (ACC3)."
+    },
+    {
+      "criterion": "ACC7",
+      "note": "Not started. It depends on the LogManager cordon state, and LogManager.scala is not in the file list."
+    },
+    {
+      "criterion": "ACC8",
+      "note": "Blocked: directory selection lives in kafka.log.LogManager.scala (nextLogDirs/getOrCreateLog), which is not in the file list."
+    },
+    {
+      "criterion": "ACC9",
+      "note": "Not started. It depends on the LogManager cordon state."
+    },
+    {
+      "criterion": "ACC10",
+      "note": "Blocked: the kafka.log:type=LogManager metrics are registered in LogManager.scala, which is not in the file list."
+    },
+    {
+      "criterion": "ACC11",
+      "note": "CordonedLogDirsIntegrationTest was not written. It cannot pass until the dynamic config and LogManager changes exist."
+    }
+  ],
+  "replan_request": {
+    "files": [
+      "core/src/main/scala/kafka/log/LogManager.scala",
+      "server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java",
+      "metadata/src/main/java/org/apache/kafka/controller/ConfigurationControlManager.java",
+      "core/src/main/scala/kafka/server/KafkaApis.scala"
+    ],
+    "reason": "Two files outside T1's list are required, and two more probably are. (1) core/src/main/scala/kafka/log/LogManager.scala is the real LogManager (dir selection, preferredLogDirs, metrics). The listed storage LogManager.java is only a static helper with no instance state, so cordon state, metrics and the 'never place in a cordoned dir' rule (ACC8, ACC10) cannot live there. (2) server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java defines ALL_DYNAMIC_CONFIGS and PER_BROKER_CONFIGS. DynamicConfig.Broker builds its dynamic set only from ALL_DYNAMIC_CONFIGS, so without an entry there cordoned.log.dirs cannot be set dynamically or per-broker (ACC1-3, ACC11). (3) Likely needed: the controller-side config validator, for the MV gate (ACC2) and log.dirs membership check (ACC1); I could not confirm its path or class name. (4) Possibly needed: core/src/main/scala/kafka/server/KafkaApis.scala for DescribeLogDirs wiring (ACC9); I have not checked."
+  },
+  "summary": "I made no edits. Two required files are missing from T1's list, and two more probably are. Each one blocks acceptance criteria, so I'm asking for a re-plan.\n\n1. `core/src/main/scala/kafka/log/LogManager.scala` is the real LogManager, with `nextLogDirs`, `getOrCreateLog`, `preferredLogDirs` and the `kafka.log:type=LogManager` metrics. The listed `storage/.../log/LogManager.java` is only a static helper (`waitForAllToComplete`, `isStrayReplica`) with no instance state. The cordon state, the metrics (ACC10) and the \"never pick a cordoned dir for a new replica\" rule (ACC8) belong in the Scala class. Working around it would mean building a parallel state holder and re-implementing directory choice in ReplicaManager.\n2. `server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java` holds `ALL_DYNAMIC_CONFIGS` and `PER_BROKER_CONFIGS`. `DynamicConfig.Broker` builds the dynamic-config set only from names in `ALL_DYNAMIC_CONFIGS`. Without an entry there, `cordoned.log.dirs` counts as non-dynamic, and an Admin or `kafka-configs.sh` update fails with \"Cannot update these configs dynamically\". The setting also has to be marked per-broker. This blocks ACC1, ACC2, ACC3 and the integration test.\n3. Likely needed: the controller-side config validator. I couldn't confirm its path (`ControllerConfigurationValidator.java` is not in `controller/`). ACC2 requires dynamic setting below 4.3-IV0 to be rejected with a configuration error. `DynamicBrokerConfig.scala` only validates on the broker, after the controller has accepted the change. Checking `log.dirs` membership for ACC1 has the same problem.\n4. Likely needed: `LogDirDescription` is built from the DescribeLogDirs response, and I haven't checked whether `KafkaApis.handleDescribeLogDirsRequest` or the broker registration path needs a change."
+}

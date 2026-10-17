@@ -1,0 +1,50 @@
+{
+  "criteria_notes": [
+    {
+      "criterion": "ACC23",
+      "note": "CordonedLogDirsIntegrationTest.testInvalidCordonedLogDirsAreRejected: paths not in log.dirs, another broker's dir and the cluster-wide default are rejected. testCordonedLogDirectoriesAreNotUsedForNewPartitions: DELETE op uncordons, and '*' and multi-dir values work. The log.dirs check is in KafkaConfig.validateValues, plus the DynamicCordonedLogDirs reconfigurable."
+    },
+    {
+      "criterion": "ACC24",
+      "note": "CordonedLogDirsIntegrationTest.testCordoningRequiresMetadataVersion (4.2-IV1): dynamic set returns InvalidConfigurationException, static '*' has no effect, and removal is still allowed. The gating is in ConfigurationControlManager and LogManager.cordonedLogDirs. ReplicationControlManagerTest.testCordonedDirectoriesAreIgnoredBeforeMetadataVersion covers the controller ignoring heartbeat reports."
+    },
+    {
+      "criterion": "ACC25",
+      "note": "CordonedLogDirsIntegrationTest.testBrokerWithAllLogDirectoriesCordonedReceivesNoNewPartitions and testStaticallyCordonedBroker poll until the controller excludes the broker, so heartbeats carry the dirs after catch-up and dynamic changes apply without restart. ReplicationControlManagerTest.testHandleCordonedDirectoriesInHeartbeat covers null, unchanged, changed and cleared reports."
+    },
+    {
+      "criterion": "ACC26",
+      "note": "Integration test: INVALID_REPLICATION_FACTOR once a fully cordoned broker leaves too few brokers, and createTopics and createPartitions only place on the other brokers. ReplicationControlManagerTest.testCordonedBrokersAreNotUsedForNewReplicas and ClusterControlManagerTest.testCordonedDirectories cover the same at unit level."
+    },
+    {
+      "criterion": "ACC27",
+      "note": "Integration test: InvalidReplicaAssignmentException for createTopics and createPartitions with explicit assignments onto the cordoned broker. Unit test in ReplicationControlManagerTest covers the same."
+    },
+    {
+      "criterion": "ACC28",
+      "note": "Integration test: alterPartitionReassignments onto the cordoned broker gives IneligibleReplicaException. The unit test also checks that an existing replica on a cordoned broker may stay while a new uncordoned one is added."
+    },
+    {
+      "criterion": "ACC29",
+      "note": "CordonedLogDirsIntegrationTest.testAlterReplicaLogDirsToCordonedDirectory: InvalidReplicaAssignmentException from ReplicaManager.alterReplicaLogDirs, then the move succeeds after uncordoning."
+    },
+    {
+      "criterion": "ACC30",
+      "note": "CordonedLogDirsIntegrationTest.testBrokerDoesNotCreateReplicaInCordonedDirectory calls LogManager.getOrCreateLog with a cordoned target dir id and verifies the log lands in the uncordoned dir. It also checks the fallback when all dirs are cordoned."
+    },
+    {
+      "criterion": "ACC31",
+      "note": "CordonedLogDirsIntegrationTest.testDescribeLogDirsReportsCordonedState checks LogDirDescription.isCordoned(). LogDirsCommandTest.testLogDirsShowsCordonedState checks the isCordoned field in the tool's JSON output."
+    },
+    {
+      "criterion": "ACC32",
+      "note": "CordonedLogDirsIntegrationTest.testCordonedLogDirectoryMetrics checks LogDirectoryCordoned per dir and CordonedLogDirectoryCount (0 -> 1 -> 2 -> 0) against the Yammer registry."
+    },
+    {
+      "criterion": "ACC33",
+      "note": "CordonedLogDirsIntegrationTest runs against an embedded 3-broker, 2-disk KRaft cluster, cordoning and uncordoning through the Admin client and checking placement and errors. All 9 tests pass."
+    }
+  ],
+  "replan_request": null,
+  "summary": "KIP-1066 is implemented across config, protocol, broker and controller, and CordonedLogDirsIntegrationTest passes (9/9). The metadata and tools unit tests I added could not be run by the harness. Two are checked via scratch copies in :server, and the tools test was not run at all. `DescribeLogDirsResponse` and `BrokerHeartbeatRequest` use tagged fields on already-released versions, because the matching request/response JSON files are not in my file list. `BrokerRegistrationChangeRecord` gets a proper v3."
+}

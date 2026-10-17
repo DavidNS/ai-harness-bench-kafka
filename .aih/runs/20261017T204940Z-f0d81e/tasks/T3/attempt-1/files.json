@@ -1,0 +1,122 @@
+[
+  {
+    "action": "modify",
+    "path": "clients/src/main/java/org/apache/kafka/clients/admin/KafkaAdminClient.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "clients/src/main/java/org/apache/kafka/clients/admin/LogDirDescription.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "clients/src/main/resources/common/message/BrokerHeartbeatRequest.json",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "clients/src/main/resources/common/message/DescribeLogDirsResponse.json",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "core/src/main/scala/kafka/log/LogManager.scala",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "core/src/main/scala/kafka/server/BrokerServer.scala",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "core/src/main/scala/kafka/server/DynamicBrokerConfig.scala",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "core/src/main/scala/kafka/server/KafkaConfig.scala",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "core/src/main/scala/kafka/server/ReplicaManager.scala",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/main/java/org/apache/kafka/controller/ClusterControlManager.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/main/java/org/apache/kafka/controller/ConfigurationControlManager.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/main/java/org/apache/kafka/controller/ReplicationControlManager.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/main/java/org/apache/kafka/image/ClusterDelta.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/main/java/org/apache/kafka/metadata/BrokerRegistration.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/main/resources/common/metadata/BrokerRegistrationChangeRecord.json",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/test/java/org/apache/kafka/controller/ClusterControlManagerTest.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "metadata/src/test/java/org/apache/kafka/controller/ReplicationControlManagerTest.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "server/src/main/java/org/apache/kafka/server/config/AbstractKafkaConfig.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "server/src/main/java/org/apache/kafka/server/config/DynamicBrokerConfig.java",
+    "role": "production"
+  },
+  {
+    "action": "create",
+    "path": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java",
+    "role": "test"
+  },
+  {
+    "action": "modify",
+    "path": "tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java",
+    "role": "production"
+  },
+  {
+    "action": "modify",
+    "path": "tools/src/test/java/org/apache/kafka/tools/LogDirsCommandTest.java",
+    "role": "production"
+  }
+]

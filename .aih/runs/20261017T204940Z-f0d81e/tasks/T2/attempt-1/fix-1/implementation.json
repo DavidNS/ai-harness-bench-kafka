@@ -1,0 +1,15 @@
+{
+  "criteria_notes": [
+    {
+      "criterion": "ACC20",
+      "note": "LogDirDescription.isCordoned() is proven by CordonedLogDirsIntegrationTest via Admin describeLogDirs. The tool's printed 'isCordoned' field needs a test in tools/src/test/java/org/apache/kafka/tools/LogDirsCommandTest.java, which is outside this task's files, so it needs a replan."
+    }
+  ],
+  "replan_request": {
+    "files": [
+      "tools/src/test/java/org/apache/kafka/tools/LogDirsCommandTest.java"
+    ],
+    "reason": "ACC20 requires a test that LogDirsCommand prints the 'isCordoned' field. LogDirsCommand lives in the tools module, which the server module's tests cannot access, and LogDirsCommandTest.java is not in this task's editable files (and is an existing test). Add it to the task's files so the test can be written."
+  },
+  "summary": "No code change in this pass. The finding asks for a test of the LogDirsCommand 'isCordoned' output, which has to live in the tools module (tools/src/test/java/org/apache/kafka/tools/LogDirsCommandTest.java). That file is not among this task's files and the server module's tests cannot see the tools module, so I cannot add it. The production change (LogDirsCommand prints 'isCordoned' per log dir) is in place; Admin-level isCordoned() is already asserted in CordonedLogDirsIntegrationTest. Requesting a replan that adds tools/src/test/java/org/apache/kafka/tools/LogDirsCommandTest.java to the task's files."
+}

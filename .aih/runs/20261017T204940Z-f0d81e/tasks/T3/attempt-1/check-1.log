@@ -1,0 +1,74 @@
+
+> Configure project :
+Starting build with version 4.3.0-SNAPSHOT (commit id unknown) using Gradle 9.2.1, Java 17 and Scala 2.13.18
+Build properties: ignoreFailures=false, maxParallelForks=4, maxScalacThreads=8, maxTestRetries=0
+
+> Task :server:processResources NO-SOURCE
+> Task :storage:storage-api:processResources NO-SOURCE
+> Task :server-common:processResources NO-SOURCE
+> Task :storage:storage-api:processTestResources UP-TO-DATE
+> Task :server-common:processTestResources UP-TO-DATE
+> Task :test-common:test-common-util:compileJava UP-TO-DATE
+> Task :generator:compileJava UP-TO-DATE
+> Task :generator:processResources NO-SOURCE
+> Task :generator:classes UP-TO-DATE
+> Task :generator:jar UP-TO-DATE
+> Task :raft:processMessages UP-TO-DATE
+> Task :share-coordinator:processMessages UP-TO-DATE
+> Task :transaction-coordinator:processMessages UP-TO-DATE
+> Task :storage:processMessages UP-TO-DATE
+> Task :group-coordinator:processMessages UP-TO-DATE
+> Task :clients:processResources
+
+> Task :metadata:processMessages
+MessageGenerator: processed 26 Kafka message JSON file(s).
+
+> Task :clients:processMessages
+MessageGenerator: processed 198 Kafka message JSON file(s).
+
+> Task :clients:compileJava
+> Task :clients:classes
+> Task :clients:processTestMessages UP-TO-DATE
+> Task :tools:tools-api:compileJava UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:compileJava UP-TO-DATE
+> Task :server-common:compileJava
+> Task :server-common:classes
+> Task :storage:storage-api:compileJava UP-TO-DATE
+> Task :test-common:test-common-internal-api:compileJava UP-TO-DATE
+> Task :storage:storage-api:classes UP-TO-DATE
+> Task :storage:compileJava
+> Task :raft:compileJava
+> Task :metadata:compileJava
+> Task :coordinator-common:compileJava
+> Task :transaction-coordinator:compileJava
+> Task :share-coordinator:compileJava
+> Task :group-coordinator:compileJava
+> Task :server:compileJava
+> Task :server:classes
+> Task :core:compileJava NO-SOURCE
+
+> Task :clients:compileTestJava
+
+> Task :clients:processTestResources UP-TO-DATE
+> Task :clients:testClasses
+> Task :storage:storage-api:compileTestJava
+> Task :storage:storage-api:testClasses
+> Task :server-common:compileTestJava
+> Task :server-common:testClasses
+> Task :core:compileScala
+> Task :test-common:test-common-runtime:compileJava
+> Task :server:compileTestJava
+
+[Incubating] Problems report is available at: file:///work/aih/worktrees/20261017T204940Z-f0d81e/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 35s
+35 actionable tasks: 19 executed, 16 up-to-date
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.2.1/userguide/configuration_cache_enabling.html
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.

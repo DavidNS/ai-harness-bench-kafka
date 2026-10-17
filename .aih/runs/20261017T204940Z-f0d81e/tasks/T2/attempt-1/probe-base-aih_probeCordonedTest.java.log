@@ -1,0 +1,334 @@
++ java -cp gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain :server:cleanTest :server:test --continue -x :server:checkstyleMain -x :server:checkstyleTest -x :server:spotbugsMain -x :server:spotbugsTest --tests org.apache.kafka.server.aih_probeCordonedTest
+-DATE
+> Task :storage:storage-api:processTestResources UP-TO-DATE
+> Task :raft:processResources UP-TO-DATE
+> Task :raft:createVersionFile UP-TO-DATE
+> Task :clients:processResources UP-TO-DATE
+> Task :clients:createVersionFile UP-TO-DATE
+> Task :test-common:test-common-util:compileJava UP-TO-DATE
+> Task :clients:processTestResources UP-TO-DATE
+> Task :test-common:test-common-util:processResources UP-TO-DATE
+> Task :test-common:test-common-util:classes UP-TO-DATE
+> Task :test-common:test-common-util:jar UP-TO-DATE
+> Task :generator:compileJava UP-TO-DATE
+> Task :generator:processResources NO-SOURCE
+> Task :generator:classes UP-TO-DATE
+> Task :generator:jar UP-TO-DATE
+> Task :storage:processMessages UP-TO-DATE
+> Task :metadata:processMessages UP-TO-DATE
+> Task :raft:processMessages UP-TO-DATE
+> Task :group-coordinator:processMessages UP-TO-DATE
+> Task :share-coordinator:processMessages UP-TO-DATE
+> Task :transaction-coordinator:processMessages UP-TO-DATE
+> Task :clients:processMessages UP-TO-DATE
+> Task :clients:compileJava UP-TO-DATE
+> Task :clients:classes UP-TO-DATE
+> Task :clients:processTestMessages UP-TO-DATE
+> Task :tools:tools-api:compileJava UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:compileJava UP-TO-DATE
+> Task :tools:tools-api:classes UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:classes UP-TO-DATE
+> Task :tools:tools-api:jar UP-TO-DATE
+> Task :group-coordinator:group-coordinator-api:jar UP-TO-DATE
+> Task :server-common:compileJava UP-TO-DATE
+> Task :server-common:classes UP-TO-DATE
+> Task :server-common:jar UP-TO-DATE
+> Task :storage:storage-api:compileJava UP-TO-DATE
+> Task :storage:storage-api:classes UP-TO-DATE
+> Task :storage:storage-api:jar UP-TO-DATE
+> Task :storage:compileJava UP-TO-DATE
+> Task :storage:classes UP-TO-DATE
+> Task :test-common:test-common-internal-api:compileJava UP-TO-DATE
+> Task :test-common:test-common-internal-api:classes UP-TO-DATE
+> Task :storage:jar UP-TO-DATE
+> Task :test-common:test-common-internal-api:jar UP-TO-DATE
+> Task :raft:compileJava UP-TO-DATE
+> Task :raft:classes UP-TO-DATE
+> Task :raft:jar UP-TO-DATE
+> Task :clients:compileTestJava UP-TO-DATE
+> Task :metadata:compileJava UP-TO-DATE
+> Task :metadata:classes UP-TO-DATE
+> Task :metadata:jar UP-TO-DATE
+> Task :clients:shadowJar UP-TO-DATE
+> Task :clients:jar SKIPPED
+> Task :clients:testClasses UP-TO-DATE
+> Task :coordinator-common:compileJava UP-TO-DATE
+> Task :coordinator-common:classes UP-TO-DATE
+> Task :coordinator-common:jar UP-TO-DATE
+> Task :storage:storage-api:compileTestJava UP-TO-DATE
+> Task :storage:storage-api:testClasses UP-TO-DATE
+> Task :share-coordinator:compileJava UP-TO-DATE
+> Task :transaction-coordinator:compileJava UP-TO-DATE
+> Task :share-coordinator:classes UP-TO-DATE
+> Task :transaction-coordinator:classes UP-TO-DATE
+> Task :share-coordinator:jar UP-TO-DATE
+> Task :transaction-coordinator:jar UP-TO-DATE
+> Task :server-common:compileTestJava UP-TO-DATE
+> Task :server-common:testClasses UP-TO-DATE
+> Task :group-coordinator:compileJava UP-TO-DATE
+> Task :group-coordinator:classes UP-TO-DATE
+> Task :group-coordinator:jar UP-TO-DATE
+> Task :server:compileJava UP-TO-DATE
+> Task :server:classes UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :server:jar UP-TO-DATE
+> Task :core:compileScala UP-TO-DATE
+> Task :core:classes UP-TO-DATE
+> Task :test-common:test-common-runtime:compileJava UP-TO-DATE
+> Task :core:copyDependantLibs UP-TO-DATE
+> Task :test-common:test-common-runtime:classes UP-TO-DATE
+> Task :test-common:test-common-runtime:jar UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+
+> Task :server:compileTestJava FAILED
+
+[Incubating] Problems report is available at: file:///work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.2.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+71 actionable tasks: 1 executed, 70 up-to-date
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:63: error: cannot find symbol
+import static org.apache.kafka.server.config.ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG;
+^
+  symbol:   static CORDONED_LOG_DIRS_CONFIG
+  location: class ServerLogConfigs
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:183: error: cannot find symbol
+        @ClusterConfigProperty(key = CORDONED_LOG_DIRS_CONFIG, value = "*")
+                                     ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class CordonedLogDirsIntegrationTest
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:90: error: invalid method reference
+            assertTrue(describeLogDirs(admin, 0).values().stream().allMatch(LogDirDescription::isCordoned));
+                                                                            ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:91: error: invalid method reference
+            assertTrue(describeLogDirs(admin, 1).values().stream().noneMatch(LogDirDescription::isCordoned));
+                                                                             ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:124: error: invalid method reference
+            assertTrue(describeLogDirs(admin, 0).values().stream().noneMatch(LogDirDescription::isCordoned));
+                                                                             ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:142: error: cannot find symbol
+            assertFalse(broker.logManager().isLogDirCordoned(cordoned));
+                                           ^
+  symbol:   method isLogDirCordoned(String)
+  location: class LogManager
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:147: error: cannot find symbol
+            assertTrue(descriptions.get(cordoned).isCordoned());
+                                                 ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:148: error: cannot find symbol
+            assertFalse(descriptions.get(uncordoned).isCordoned());
+                                                    ^
+  symbol:   method isCordoned()
+  location: class LogDirDescription
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:193: error: invalid method reference
+            assertTrue(describeLogDirs(admin, 0).values().stream().noneMatch(LogDirDescription::isCordoned));
+                                                                             ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:201: error: cannot find symbol
+            new ConfigEntry(CORDONED_LOG_DIRS_CONFIG, value), AlterConfigOp.OpType.SET));
+                            ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class CordonedLogDirsIntegrationTest
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:206: error: cannot find symbol
+            new ConfigEntry(CORDONED_LOG_DIRS_CONFIG, null), AlterConfigOp.OpType.DELETE));
+                            ^
+  symbol:   variable CORDONED_LOG_DIRS_CONFIG
+  location: class CordonedLogDirsIntegrationTest
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:226: error: cannot find symbol
+            return registration != null && registration.cordonedDirectories().size() == expected;
+                                                       ^
+  symbol:   method cordonedDirectories()
+  location: variable registration of type BrokerRegistration
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:118: error: invalid method reference
+                .allMatch(LogDirDescription::isCordoned));
+                          ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:120: error: invalid method reference
+                .noneMatch(LogDirDescription::isCordoned));
+                           ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:128: error: invalid method reference
+                .noneMatch(LogDirDescription::isCordoned));
+                           ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:141: error: cannot find symbol
+            TestUtils.waitForCondition(() -> broker.logManager().isLogDirCordoned(cordoned), 60_000, "cordon");
+                                                                ^
+  symbol:   method isLogDirCordoned(String)
+  location: class LogManager
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:158: error: cannot find symbol
+            TestUtils.waitForCondition(() -> !broker.logManager().isLogDirCordoned(cordoned), 60_000, "uncordon");
+                                                                 ^
+  symbol:   method isLogDirCordoned(String)
+  location: class LogManager
+/work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:170: error: invalid method reference
+                .noneMatch(LogDirDescription::isCordoned));
+                           ^
+  cannot find symbol
+    symbol:   method isCordoned(T)
+    location: class LogDirDescription
+  where T is a type-variable:
+    T extends Object declared in interface Stream
+18 errors
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':server:compileTestJava'.
+> Compilation failed; see the compiler output below.
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:90: error: invalid method reference
+              assertTrue(describeLogDirs(admin, 0).values().stream().allMatch(LogDirDescription::isCordoned));
+                                                                              ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:91: error: invalid method reference
+              assertTrue(describeLogDirs(admin, 1).values().stream().noneMatch(LogDirDescription::isCordoned));
+                                                                               ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:124: error: invalid method reference
+              assertTrue(describeLogDirs(admin, 0).values().stream().noneMatch(LogDirDescription::isCordoned));
+                                                                               ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:193: error: invalid method reference
+              assertTrue(describeLogDirs(admin, 0).values().stream().noneMatch(LogDirDescription::isCordoned));
+                                                                               ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:118: error: invalid method reference
+                  .allMatch(LogDirDescription::isCordoned));
+                            ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:120: error: invalid method reference
+                  .noneMatch(LogDirDescription::isCordoned));
+                             ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:128: error: invalid method reference
+                  .noneMatch(LogDirDescription::isCordoned));
+                             ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:170: error: invalid method reference
+                  .noneMatch(LogDirDescription::isCordoned));
+                             ^
+    cannot find symbol
+      symbol:   method isCordoned(T)
+      location: class LogDirDescription
+    where T is a type-variable:
+      T extends Object declared in interface Stream
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:63: error: cannot find symbol
+  import static org.apache.kafka.server.config.ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG;
+  ^
+    symbol:   static CORDONED_LOG_DIRS_CONFIG
+    location: class ServerLogConfigs
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:183: error: cannot find symbol
+          @ClusterConfigProperty(key = CORDONED_LOG_DIRS_CONFIG, value = "*")
+                                       ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class CordonedLogDirsIntegrationTest
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:201: error: cannot find symbol
+              new ConfigEntry(CORDONED_LOG_DIRS_CONFIG, value), AlterConfigOp.OpType.SET));
+                              ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class CordonedLogDirsIntegrationTest
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:206: error: cannot find symbol
+              new ConfigEntry(CORDONED_LOG_DIRS_CONFIG, null), AlterConfigOp.OpType.DELETE));
+                              ^
+    symbol:   variable CORDONED_LOG_DIRS_CONFIG
+    location: class CordonedLogDirsIntegrationTest
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:142: error: cannot find symbol
+              assertFalse(broker.logManager().isLogDirCordoned(cordoned));
+                                             ^
+    symbol:   method isLogDirCordoned(String)
+    location: class LogManager
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:147: error: cannot find symbol
+              assertTrue(descriptions.get(cordoned).isCordoned());
+                                                   ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:148: error: cannot find symbol
+              assertFalse(descriptions.get(uncordoned).isCordoned());
+                                                      ^
+    symbol:   method isCordoned()
+    location: class LogDirDescription
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java:226: error: cannot find symbol
+              return registration != null && registration.cordonedDirectories().size() == expected;
+                                                         ^
+    symbol:   method cordonedDirectories()
+    location: variable registration of type BrokerRegistration
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:141: error: cannot find symbol
+              TestUtils.waitForCondition(() -> broker.logManager().isLogDirCordoned(cordoned), 60_000, "cordon");
+                                                                  ^
+    symbol:   method isLogDirCordoned(String)
+    location: class LogManager
+  /work/aih/worktrees/20261017T204940Z-f0d81e-probe-base/server/src/test/java/org/apache/kafka/server/aih_probeCordonedTest.java:158: error: cannot find symbol
+              TestUtils.waitForCondition(() -> !broker.logManager().isLogDirCordoned(cordoned), 60_000, "uncordon");
+                                                                   ^
+    symbol:   method isLogDirCordoned(String)
+    location: class LogManager
+  18 errors
+
+* Try:
+> Check your code and dependencies to fix the compilation error(s)
+
+BUILD FAILED in 2s
+

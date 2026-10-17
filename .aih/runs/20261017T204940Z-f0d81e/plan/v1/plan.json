@@ -1,0 +1,293 @@
+{
+  "criteria": [
+    {
+      "id": "ACC1",
+      "intent": "INTENT1",
+      "key": "C1",
+      "kind": "behavior",
+      "text": "cordoned.log.dirs can be set dynamically per broker; values not in log.dirs (and not '*') are rejected; removing the entry uncordons."
+    },
+    {
+      "id": "ACC2",
+      "intent": "INTENT2",
+      "key": "C2",
+      "kind": "behavior",
+      "text": "Below 4.3-IV0, dynamic setting is rejected with a configuration error and static setting has no effect."
+    },
+    {
+      "id": "ACC3",
+      "intent": "INTENT3",
+      "key": "C3",
+      "kind": "behavior",
+      "text": "Heartbeats carry cordoned dirs after catch-up; controller reflects dynamic changes without restart."
+    },
+    {
+      "id": "ACC4",
+      "intent": "INTENT4",
+      "key": "C4",
+      "kind": "behavior",
+      "text": "Auto-placed creation avoids fully cordoned brokers and fails with INVALID_REPLICATION_FACTOR when too few remain."
+    },
+    {
+      "id": "ACC5",
+      "intent": "INTENT5",
+      "key": "C5",
+      "kind": "behavior",
+      "text": "Explicit assignment onto a fully cordoned broker returns INVALID_REPLICA_ASSIGNMENT."
+    },
+    {
+      "id": "ACC6",
+      "intent": "INTENT6",
+      "key": "C6",
+      "kind": "behavior",
+      "text": "Reassignment onto a fully cordoned broker returns INELIGIBLE_REPLICA."
+    },
+    {
+      "id": "ACC7",
+      "intent": "INTENT7",
+      "key": "C7",
+      "kind": "behavior",
+      "text": "AlterReplicaLogDirs to a cordoned directory returns INVALID_REPLICA_ASSIGNMENT."
+    },
+    {
+      "id": "ACC8",
+      "intent": "INTENT8",
+      "key": "C8",
+      "kind": "behavior",
+      "text": "Broker never creates a new replica in a cordoned directory even if the controller suggested it."
+    },
+    {
+      "id": "ACC9",
+      "intent": "INTENT9",
+      "key": "C9",
+      "kind": "behavior",
+      "text": "DescribeLogDirs returns per-directory cordoned state via LogDirDescription.isCordoned() and the tool prints it."
+    },
+    {
+      "id": "ACC10",
+      "intent": "INTENT10",
+      "key": "C10",
+      "kind": "behavior",
+      "text": "LogDirectoryCordoned and CordonedLogDirectoryCount metrics are registered and accurate."
+    },
+    {
+      "id": "ACC11",
+      "intent": "INTENT11",
+      "key": "C11",
+      "kind": "behavior",
+      "text": "Integration test cordons/uncordons via Admin on an embedded cluster and checks placement and errors."
+    }
+  ],
+  "frozen_at": "2026-10-17T20:50:32+00:00",
+  "intents": [
+    {
+      "evidence": [
+        {
+          "end": 37,
+          "path": "server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java",
+          "quote": "LOG_DIRS_CONFIG = LOG_PREFIX + \"dirs\"",
+          "start": 37
+        }
+      ],
+      "intent": "INTENT1",
+      "rationale": "No cordoned.log.dirs config exists; add to ServerLogConfigs/AbstractKafkaConfig/KafkaConfig, dynamic per-broker in DynamicBrokerConfig, validated against log.dirs or '*'.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [
+        {
+          "end": 131,
+          "path": "server-common/src/main/java/org/apache/kafka/server/common/MetadataVersion.java",
+          "quote": "IBP_4_3_IV0(30, \"4.3\", \"IV0\", false)",
+          "start": 131
+        }
+      ],
+      "intent": "INTENT2",
+      "rationale": "Gate on IBP_4_3_IV0: reject dynamic set below it with ConfigException; ignore static value.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT3",
+      "rationale": "Add CordonedLogDirs to BrokerHeartbeatRequest (new version), send from BrokerLifecycleManager once caught up, store in controller.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT4",
+      "rationale": "Filter brokers without uncordoned dirs in controller placement; INVALID_REPLICATION_FACTOR if too few.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT5",
+      "rationale": "Validate explicit assignments in ReplicationControlManager.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT6",
+      "rationale": "Validate reassignment targets, return INELIGIBLE_REPLICA.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT7",
+      "rationale": "Reject AlterReplicaLogDirs to a cordoned dir with INVALID_REPLICA_ASSIGNMENT.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT8",
+      "rationale": "LogManager directory selection must skip cordoned dirs regardless of controller hint.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT9",
+      "rationale": "Add isCordoned to DescribeLogDirsResponse.json (new version), LogDirDescription, LogDirsCommand.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT10",
+      "rationale": "Register the two gauges in LogManager.",
+      "resolution": "change"
+    },
+    {
+      "evidence": [],
+      "intent": "INTENT11",
+      "rationale": "Add embedded-cluster integration test.",
+      "resolution": "change"
+    }
+  ],
+  "run_id": "20261017T204940Z-f0d81e",
+  "summary": "",
+  "tasks": [
+    {
+      "criteria": [
+        "ACC1",
+        "ACC2",
+        "ACC3",
+        "ACC4",
+        "ACC5",
+        "ACC6",
+        "ACC7",
+        "ACC8",
+        "ACC9",
+        "ACC10",
+        "ACC11"
+      ],
+      "depends_on": [],
+      "files": [
+        {
+          "action": "modify",
+          "path": "server-common/src/main/java/org/apache/kafka/server/config/ServerLogConfigs.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "server/src/main/java/org/apache/kafka/server/config/AbstractKafkaConfig.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "server/src/main/java/org/apache/kafka/server/BrokerLifecycleManager.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "core/src/main/scala/kafka/server/KafkaConfig.scala",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "core/src/main/scala/kafka/server/DynamicBrokerConfig.scala",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "core/src/main/scala/kafka/server/BrokerServer.scala",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "core/src/main/scala/kafka/server/ReplicaManager.scala",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "storage/src/main/java/org/apache/kafka/storage/internals/log/LogManager.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "clients/src/main/resources/common/message/BrokerHeartbeatRequest.json",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "clients/src/main/resources/common/message/DescribeLogDirsResponse.json",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "clients/src/main/java/org/apache/kafka/clients/admin/LogDirDescription.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "clients/src/main/java/org/apache/kafka/clients/admin/KafkaAdminClient.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "clients/src/main/java/org/apache/kafka/common/requests/DescribeLogDirsResponse.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "tools/src/main/java/org/apache/kafka/tools/LogDirsCommand.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "metadata/src/main/java/org/apache/kafka/controller/ClusterControlManager.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "metadata/src/main/java/org/apache/kafka/controller/ReplicationControlManager.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "metadata/src/main/java/org/apache/kafka/controller/BrokerHeartbeatManager.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "metadata/src/main/java/org/apache/kafka/controller/QuorumController.java",
+          "role": "production"
+        },
+        {
+          "action": "modify",
+          "path": "metadata/src/main/java/org/apache/kafka/metadata/BrokerHeartbeatReply.java",
+          "role": "production"
+        },
+        {
+          "action": "create",
+          "path": "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java",
+          "role": "test"
+        }
+      ],
+      "id": "T1",
+      "key": "T1",
+      "summary": "Implement KIP-1066 end to end as one PR. Order: config + MV gating; protocol JSON changes and LogDirDescription; LogManager cordon state/metrics/dir choice; broker heartbeat; controller storage and placement/validation; ReplicaManager alter-log-dirs check; tool output; then tests, updating existing tests broken by schema/constructor changes.",
+      "tests": [
+        "server/src/test/java/org/apache/kafka/server/CordonedLogDirsIntegrationTest.java"
+      ]
+    }
+  ],
+  "version": 1
+}

@@ -1,0 +1,1 @@
+junit_selected: no test classes to run for ['metadata/src/test/java/org/apache/kafka/metadata/BrokerRegistrationTest.java', 'metadata/src/test/java/org/apache/kafka/controller/ClusterControlManagerTest.java', 'metadata/src/test/java/org/apache/kafka/controller/ConfigurationControlManagerTest.java', 'metadata/src/test/java/org/apache/kafka/image/ClusterImageTest.java']
