@@ -59,9 +59,12 @@ public class DynamicBrokerConfig {
             SocketServerConfigs.MAX_CONNECTION_CREATION_RATE_CONFIG,
             SocketServerConfigs.NUM_NETWORK_THREADS_CONFIG);
 
+    private static final Set<String> DYNAMIC_CORDONED_LOG_DIRS_CONFIGS = Set.of(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG);
+
     private static final Set<String> PER_BROKER_CONFIGS = Stream.of(
             DYNAMIC_SECURITY_CONFIGS,
-            DynamicListenerConfig.RECONFIGURABLE_CONFIGS)
+            DynamicListenerConfig.RECONFIGURABLE_CONFIGS,
+            DYNAMIC_CORDONED_LOG_DIRS_CONFIGS)
         .flatMap(Collection::stream)
         .filter(c -> !CLUSTER_LEVEL_LISTENER_CONFIGS.contains(c))
         .collect(Collectors.toUnmodifiableSet());
@@ -75,6 +78,7 @@ public class DynamicBrokerConfig {
             DynamicListenerConfig.RECONFIGURABLE_CONFIGS,
             SocketServer.RECONFIGURABLE_CONFIGS,
             DYNAMIC_PRODUCER_STATE_MANAGER_CONFIGS,
+            DYNAMIC_CORDONED_LOG_DIRS_CONFIGS,
             DynamicRemoteLogConfig.RECONFIGURABLE_CONFIGS,
             DynamicReplicationConfig.RECONFIGURABLE_CONFIGS,
             List.of(AbstractConfig.CONFIG_PROVIDERS_CONFIG),

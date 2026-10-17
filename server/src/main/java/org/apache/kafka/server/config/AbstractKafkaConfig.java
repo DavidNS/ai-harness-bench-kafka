@@ -81,7 +81,13 @@ public abstract class AbstractKafkaConfig extends AbstractConfig {
         QuotaConfig.CONFIG_DEF,
         BrokerSecurityConfigs.CONFIG_DEF,
         DelegationTokenManagerConfigs.CONFIG_DEF,
-        AddPartitionsToTxnConfig.CONFIG_DEF
+        AddPartitionsToTxnConfig.CONFIG_DEF,
+        new ConfigDef().define(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG,
+            ConfigDef.Type.LIST,
+            "",
+            ConfigDef.ValidList.anyNonDuplicateValues(true, false),
+            ConfigDef.Importance.LOW,
+            ServerLogConfigs.CORDONED_LOG_DIRS_DOC)
     ));
 
     public AbstractKafkaConfig(ConfigDef definition, Map<?, ?> originals, Map<String, ?> configProviderProps, boolean doLog) {
@@ -90,6 +96,10 @@ public abstract class AbstractKafkaConfig extends AbstractConfig {
 
     public List<String> logDirs() {
         return Optional.ofNullable(getList(ServerLogConfigs.LOG_DIRS_CONFIG)).orElse(getList(ServerLogConfigs.LOG_DIR_CONFIG));
+    }
+
+    public List<String> cordonedLogDirs() {
+        return getList(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG);
     }
 
     public int numIoThreads() {

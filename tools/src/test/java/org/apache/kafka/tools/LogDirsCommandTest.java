@@ -18,13 +18,18 @@ package org.apache.kafka.tools;
 
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
+import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.LogDirDescription;
 import org.apache.kafka.clients.admin.MockAdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.test.ClusterInstance;
 import org.apache.kafka.common.test.api.ClusterTest;
+import org.apache.kafka.server.config.ServerLogConfigs;
+import org.apache.kafka.test.TestUtils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -135,6 +140,32 @@ public class LogDirsCommandTest {
                         assertFalse(output.contains("\"partition\":\"" + tp + "\""))
                     );
                 }));
+        }
+    }
+
+    @ClusterTest(brokers = 1, disksPerBroker = 2)
+    @SuppressWarnings("unchecked")
+    public void testLogDirsShowsCordonedState(ClusterInstance clusterInstance) throws Exception {
+        try (Admin admin = Admin.create(Map.of(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, clusterInstance.bootstrapServers()))) {
+            List<String> dirs = admin.describeLogDirs(Set.of(0)).allDescriptions().get().get(0).keySet().stream().sorted().toList();
+            assertEquals(2, dirs.size());
+            admin.incrementalAlterConfigs(Map.of(
+                new ConfigResource(ConfigResource.Type.BROKER, "0"),
+                List.of(new AlterConfigOp(new ConfigEntry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, dirs.get(1)), AlterConfigOp.OpType.SET))
+            )).all().get();
+            TestUtils.waitForCondition(
+                () -> admin.describeLogDirs(Set.of(0)).allDescriptions().get().get(0).get(dirs.get(1)).isCordoned(),
+                "The cordoned log directory was not reported as cordoned");
+
+            String output = execute(fromArgsToOptions("--bootstrap-server", clusterInstance.bootstrapServers(), "--describe"), admin);
+            String[] outputLines = output.split("\n");
+            Map<String, Object> information = new ObjectMapper().readValue(outputLines[outputLines.length - 1], HashMap.class);
+            List<Object> brokersInformation = (List<Object>) information.get("brokers");
+            List<Map<String, Object>> logDirsInformation = (List<Map<String, Object>>) ((Map<String, Object>) brokersInformation.get(0)).get("logDirs");
+            assertEquals(2, logDirsInformation.size());
+            for (Map<String, Object> logDirInformation : logDirsInformation) {
+                assertEquals(logDirInformation.get("logDir").equals(dirs.get(1)), logDirInformation.get("isCordoned"));
+            }
         }
     }
 

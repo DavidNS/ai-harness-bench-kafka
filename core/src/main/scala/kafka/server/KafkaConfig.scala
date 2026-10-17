@@ -494,6 +494,11 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
     require(logRollTimeJitterMillis >= 0, "log.roll.jitter.ms must be greater than or equal to 0")
     require(logRetentionTimeMillis >= 1 || logRetentionTimeMillis == -1, "log.retention.ms must be unlimited (-1) or, greater than or equal to 1")
     require(logDirs.size > 0, "At least one log directory must be defined via log.dirs or log.dir.")
+    val absoluteLogDirs = logDirs.asScala.map(new java.io.File(_).getAbsolutePath).toSet
+    val unknownCordonedLogDirs = cordonedLogDirs.asScala.filter(dir =>
+      dir != ServerLogConfigs.CORDONED_LOG_DIRS_ALL && !absoluteLogDirs.contains(new java.io.File(dir).getAbsolutePath))
+    require(unknownCordonedLogDirs.isEmpty,
+      s"${ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG} contains entries that are not in log.dirs or log.dir: ${unknownCordonedLogDirs.mkString(",")}")
     require(logCleanerDedupeBufferSize / logCleanerThreads > 1024 * 1024, "log.cleaner.dedupe.buffer.size must be at least 1MB per cleaner thread.")
     require(replicaFetchWaitMaxMs <= replicaSocketTimeoutMs, "replica.socket.timeout.ms should always be at least replica.fetch.wait.max.ms" +
       " to prevent unnecessary socket timeouts")

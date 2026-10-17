@@ -206,6 +206,16 @@ public class BrokerLifecycleManager {
      */
     private volatile OptionalLong previousBrokerEpoch = OptionalLong.empty();
 
+    /**
+     * Provides the IDs of the cordoned log directories of this broker, which are sent to the
+     * controller in the heartbeats once the broker has caught up with the metadata.
+     */
+    private volatile Supplier<Set<Uuid>> cordonedLogDirsSupplier = Set::of;
+
+    public void setCordonedLogDirsSupplier(Supplier<Set<Uuid>> cordonedLogDirsSupplier) {
+        this.cordonedLogDirsSupplier = cordonedLogDirsSupplier;
+    }
+
     public BrokerLifecycleManager(
             AbstractKafkaConfig config,
             Time time,
@@ -532,6 +542,13 @@ public class BrokerLifecycleManager {
             .setWantFence(!readyToUnfence)
             .setWantShutDown(state == BrokerState.PENDING_CONTROLLED_SHUTDOWN)
             .setOfflineLogDirs(new ArrayList<>(offlineDirs.keySet()));
+        // The cordoned log directories are only reported once the broker has caught up with the metadata,
+        // since the metadata version that gates the feature is not known before that.
+        if (initialCatchUpFuture.isDone()) {
+            List<Uuid> cordonedLogDirs = new ArrayList<>(cordonedLogDirsSupplier.get());
+            cordonedLogDirs.sort(Uuid::compareTo);
+            data.setCordonedLogDirs(cordonedLogDirs);
+        }
         if (logger.isTraceEnabled()) {
             logger.trace("Sending broker heartbeat {}", data);
         }

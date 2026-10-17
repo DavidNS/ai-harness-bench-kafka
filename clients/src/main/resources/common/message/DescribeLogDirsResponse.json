@@ -55,6 +55,9 @@
       },
       { "name": "UsableBytes", "type": "int64", "versions": "4+", "ignorable": true, "default": "-1",
         "about": "The usable size in bytes of the volume the log directory is in. This value does not include the size of data stored in remote storage."
+      },
+      { "name": "IsCordoned", "type": "bool", "versions": "4+", "taggedVersions": "4+", "tag": 0, "ignorable": true, "default": "false",
+        "about": "True if this log directory is cordoned, so that no new partitions are placed on it."
       }
     ]}
   ]

@@ -196,6 +196,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
 
     addBrokerReconfigurable(new BrokerDynamicThreadPool(kafkaServer))
     addBrokerReconfigurable(new DynamicLogConfig(kafkaServer.logManager))
+    addBrokerReconfigurable(new DynamicCordonedLogDirs(kafkaServer.logManager))
     addBrokerReconfigurable(new DynamicListenerConfig(kafkaServer))
     addBrokerReconfigurable(kafkaServer.socketServer)
     addBrokerReconfigurable(new DynamicProducerStateManagerConfig(kafkaServer.logManager.producerStateManagerConfig))
@@ -601,6 +602,20 @@ class DynamicLogConfig(logManager: LogManager) extends BrokerReconfigurable with
     logManager.reconfigureDefaultLogConfig(new LogConfig(newBrokerDefaults))
 
     updateLogsConfig(newBrokerDefaults.asScala)
+  }
+}
+
+class DynamicCordonedLogDirs(logManager: LogManager) extends BrokerReconfigurable {
+
+  override def reconfigurableConfigs: util.Set[String] = {
+    util.Set.of(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG)
+  }
+
+  // The entries are validated against log.dirs when the new KafkaConfig is created.
+  override def validateReconfiguration(newConfig: KafkaConfig): Unit = {}
+
+  override def reconfigure(oldConfig: KafkaConfig, newConfig: KafkaConfig): Unit = {
+    logManager.updateCordonedLogDirs(newConfig.cordonedLogDirs)
   }
 }
 

@@ -68,6 +68,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
@@ -450,6 +451,96 @@ public class ClusterControlManagerTest {
                 assertTrue(seen.add(result));
             }
         }
+    }
+
+    private static void registerUnfencedBroker(ClusterControlManager clusterControl, int brokerId, List<Uuid> logDirs) {
+        RegisterBrokerRecord brokerRecord = new RegisterBrokerRecord().
+            setBrokerEpoch(100).
+            setBrokerId(brokerId).
+            setLogDirs(logDirs);
+        brokerRecord.endPoints().add(new BrokerEndpoint().
+            setSecurityProtocol(SecurityProtocol.PLAINTEXT.id).
+            setPort((short) 9092).
+            setName("PLAINTEXT").
+            setHost("example.com"));
+        clusterControl.replay(brokerRecord, 100L);
+        clusterControl.replay(new UnfenceBrokerRecord().setId(brokerId).setEpoch(100));
+        clusterControl.heartbeatManager().touch(brokerId, false, 0);
+    }
+
+    private static Set<Integer> usableBrokerIds(ClusterControlManager clusterControl) {
+        Set<Integer> ids = new HashSet<>();
+        clusterControl.usableBrokers().forEachRemaining(broker -> ids.add(broker.id()));
+        return ids;
+    }
+
+    @Test
+    public void testCordonedDirectories() {
+        MockTime time = new MockTime(0, 0, 0);
+        SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
+        FeatureControlManager featureControl = new FeatureControlManager.Builder().
+            setSnapshotRegistry(snapshotRegistry).
+            setQuorumFeatures(new QuorumFeatures(0,
+                QuorumFeatures.defaultSupportedFeatureMap(true),
+                List.of(0))).
+            build();
+        ClusterControlManager clusterControl = new ClusterControlManager.Builder().
+            setTime(time).
+            setSnapshotRegistry(snapshotRegistry).
+            setSessionTimeoutNs(1000).
+            setFeatureControlManager(featureControl).
+            setBrokerShutdownHandler((brokerId, isCleanShutdown, records) -> { }).
+            build();
+        clusterControl.activate();
+        Uuid dir1 = Uuid.randomUuid();
+        Uuid dir2 = Uuid.randomUuid();
+        Uuid dir3 = Uuid.randomUuid();
+        registerUnfencedBroker(clusterControl, 0, List.of(dir1, dir2));
+        registerUnfencedBroker(clusterControl, 1, List.of(dir3));
+        // A broker which did not register any directory is never considered cordoned.
+        registerUnfencedBroker(clusterControl, 2, List.of());
+        assertEquals(Set.of(0, 1, 2), usableBrokerIds(clusterControl));
+        assertEquals(List.of(), clusterControl.registration(0).cordonedDirectories());
+        assertTrue(clusterControl.registration(0).hasUncordonedDir());
+        assertTrue(clusterControl.registration(2).hasUncordonedDir());
+
+        // Cordoning only some of the directories of a broker keeps it usable.
+        clusterControl.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(0).setBrokerEpoch(100).setCordonedLogDirs(List.of(dir2)));
+        assertEquals(List.of(dir2), clusterControl.registration(0).cordonedDirectories());
+        assertTrue(clusterControl.registration(0).hasUncordonedDir());
+        assertTrue(clusterControl.registration(0).isUncordonedDir(dir1));
+        assertFalse(clusterControl.registration(0).isUncordonedDir(dir2));
+        assertEquals(Set.of(0, 1, 2), usableBrokerIds(clusterControl));
+
+        // Cordoning all the directories of a broker excludes it from the usable brokers.
+        clusterControl.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(0).setBrokerEpoch(100).setCordonedLogDirs(List.of(dir2, dir1)));
+        clusterControl.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(1).setBrokerEpoch(100).setCordonedLogDirs(List.of(dir3)));
+        assertEquals(Stream.of(dir1, dir2).sorted().toList(), clusterControl.registration(0).cordonedDirectories());
+        assertFalse(clusterControl.registration(0).hasUncordonedDir());
+        assertFalse(clusterControl.registration(1).hasUncordonedDir());
+        assertEquals(Set.of(2), usableBrokerIds(clusterControl));
+        Iterator<UsableBroker> iterator = clusterControl.usableBrokers();
+        assertTrue(iterator.hasNext());
+        assertTrue(iterator.hasNext());
+        assertEquals(2, iterator.next().id());
+        assertFalse(iterator.hasNext());
+        assertThrows(NoSuchElementException.class, iterator::next);
+
+        // Records which don't have cordoned directories leave them unchanged.
+        clusterControl.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(1).setBrokerEpoch(100).
+            setFenced(BrokerRegistrationFencingChange.UNFENCE.value()));
+        assertEquals(List.of(dir3), clusterControl.registration(1).cordonedDirectories());
+        assertEquals(Set.of(2), usableBrokerIds(clusterControl));
+
+        // An empty list uncordons all the directories.
+        clusterControl.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(0).setBrokerEpoch(100).setCordonedLogDirs(List.of()));
+        assertEquals(List.of(), clusterControl.registration(0).cordonedDirectories());
+        assertEquals(Set.of(0, 2), usableBrokerIds(clusterControl));
     }
 
     @Test

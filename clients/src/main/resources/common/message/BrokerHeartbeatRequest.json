@@ -32,6 +32,9 @@
     { "name": "WantShutDown", "type": "bool", "versions": "0+",
       "about": "True if the broker wants to be shut down, false otherwise." },
     { "name": "OfflineLogDirs", "type":  "[]uuid", "versions": "1+", "taggedVersions": "1+", "tag": 0,
-      "about": "Log directories that failed and went offline." }
+      "about": "Log directories that failed and went offline." },
+    { "name": "CordonedLogDirs", "type": "[]uuid", "versions": "1+", "taggedVersions": "1+", "tag": 1,
+      "nullableVersions": "1+", "default": "null",
+      "about": "Log directories that are cordoned, or null if the broker did not report its cordoned log directories." }
   ]
 }

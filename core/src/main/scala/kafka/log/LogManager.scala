@@ -38,6 +38,7 @@ import org.apache.kafka.metadata.ConfigRepository
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, PropertiesUtils}
 
 import java.util.{Collections, Optional, OptionalLong, Properties}
+import org.apache.kafka.server.config.ServerLogConfigs
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.{FileLock, Scheduler}
 import org.apache.kafka.storage.internals.log.{CleanerConfig, LogCleaner, LogConfig, LogDirFailureChannel, LogManager => JLogManager, LogOffsetsListener, ProducerStateManagerConfig, RemoteIndexCache, UnifiedLog}
@@ -153,12 +154,57 @@ class LogManager(logDirs: Seq[File],
   @volatile private var _cleaner: LogCleaner = _
   private[kafka] def cleaner: LogCleaner = _cleaner
 
+  // The value of cordoned.log.dirs: absolute paths of the cordoned directories, or "*" for all of them.
+  @volatile private var configuredCordonedLogDirs: Predef.Set[String] = Predef.Set.empty
+  // Cordoning is only in effect when this returns true (i.e. the metadata version supports it).
+  @volatile private var cordoningSupported: () => Boolean = () => true
+
   metricsGroup.newGauge("OfflineLogDirectoryCount", () => offlineLogDirs.size)
+  metricsGroup.newGauge("CordonedLogDirectoryCount", () => cordonedLogDirs.size)
 
   for (dir <- logDirs) {
     metricsGroup.newGauge("LogDirectoryOffline",
       () => if (_liveLogDirs.contains(dir)) 0 else 1,
       Map("logDirectory" -> dir.getAbsolutePath).asJava)
+    metricsGroup.newGauge("LogDirectoryCordoned",
+      () => if (cordonedLogDirs.contains(dir.getAbsolutePath)) 1 else 0,
+      Map("logDirectory" -> dir.getAbsolutePath).asJava)
+  }
+
+  /**
+   * Set the value of cordoned.log.dirs. Entries must be paths of directories managed by this LogManager, or "*".
+   */
+  def updateCordonedLogDirs(configured: util.Collection[String]): Unit = {
+    configuredCordonedLogDirs = configured.asScala.map { dir =>
+      if (dir == ServerLogConfigs.CORDONED_LOG_DIRS_ALL) dir else new File(dir).getAbsolutePath
+    }.toSet
+    info(s"Cordoned log directories are now: ${cordonedLogDirs.mkString(",")}")
+  }
+
+  def setCordoningSupported(supported: () => Boolean): Unit = {
+    cordoningSupported = supported
+  }
+
+  /**
+   * The absolute paths of the cordoned log directories.
+   */
+  def cordonedLogDirs: Predef.Set[String] = {
+    if (!cordoningSupported())
+      Predef.Set.empty
+    else if (configuredCordonedLogDirs.contains(ServerLogConfigs.CORDONED_LOG_DIRS_ALL))
+      logDirs.map(_.getAbsolutePath).toSet
+    else
+      logDirs.map(_.getAbsolutePath).filter(configuredCordonedLogDirs.contains).toSet
+  }
+
+  def isCordoned(logDir: String): Boolean = cordonedLogDirs.contains(new File(logDir).getAbsolutePath)
+
+  /**
+   * The IDs of the cordoned log directories that have one.
+   */
+  def cordonedLogDirIds: Predef.Set[Uuid] = {
+    val cordoned = cordonedLogDirs
+    directoryIds.collect { case (path, id) if cordoned.contains(path) => id }.toSet
   }
 
   /**
@@ -647,8 +693,10 @@ class LogManager(logDirs: Seq[File],
     info("Shutting down.")
 
     metricsGroup.removeMetric("OfflineLogDirectoryCount")
+    metricsGroup.removeMetric("CordonedLogDirectoryCount")
     for (dir <- logDirs) {
       metricsGroup.removeMetric("LogDirectoryOffline", Map("logDirectory" -> dir.getAbsolutePath).asJava)
+      metricsGroup.removeMetric("LogDirectoryCordoned", Map("logDirectory" -> dir.getAbsolutePath).asJava)
     }
 
     val threadPools = ArrayBuffer.empty[ExecutorService]
@@ -1037,10 +1085,13 @@ class LogManager(logDirs: Seq[File],
               throw new IllegalStateException(s"Can not create the future log for $topicPartition in the current log directory of this partition")
           }
 
-          if (preferredLogDir != null)
+          if (preferredLogDir != null && (isFuture || !isCordoned(preferredLogDir)))
             List(new File(preferredLogDir))
-          else
+          else {
+            if (preferredLogDir != null)
+              warn(s"Not creating the log for $topicPartition in the cordoned log directory $preferredLogDir")
             nextLogDirs()
+          }
         }
 
         val logDirName = {
@@ -1367,13 +1418,17 @@ class LogManager(logDirs: Seq[File],
    * data directories by fewest partitions.
    */
   private def nextLogDirs(): List[File] = {
-    if (_liveLogDirs.size == 1) {
-      List(_liveLogDirs.peek())
+    // Cordoned directories are avoided, unless every live directory is cordoned.
+    val cordoned = cordonedLogDirs
+    val uncordonedLiveDirs = _liveLogDirs.asScala.filterNot(dir => cordoned.contains(dir.getAbsolutePath))
+    val candidateDirs = if (uncordonedLiveDirs.isEmpty) _liveLogDirs.asScala else uncordonedLiveDirs
+    if (candidateDirs.size == 1) {
+      List(candidateDirs.head)
     } else {
       // count the number of logs in each parent directory (including 0 for empty directories
       val logCounts = allLogs.groupBy(_.parentDir).map { case (parent, logs) => parent -> logs.size }
-      val zeros = _liveLogDirs.asScala.map(dir => (dir.getPath, 0)).toMap
-      val dirCounts = (zeros ++ logCounts).toBuffer
+      val zeros = candidateDirs.map(dir => (dir.getPath, 0)).toMap
+      val dirCounts = (zeros ++ logCounts.filter { case (parent, _) => zeros.contains(parent) }).toBuffer
 
       // choose the directory with the least logs in it
       dirCounts.sortBy(_._2).map {
@@ -1545,7 +1600,7 @@ object LogManager {
     val cleanerConfig = new CleanerConfig(config)
     val transactionLogConfig = new TransactionLogConfig(config)
 
-    new LogManager(logDirs = config.logDirs.asScala.map(new File(_).getAbsoluteFile),
+    val logManager = new LogManager(logDirs = config.logDirs.asScala.map(new File(_).getAbsoluteFile),
       initialOfflineDirs = initialOfflineDirs.map(new File(_).getAbsoluteFile),
       configRepository = configRepository,
       initialDefaultConfig = defaultLogConfig,
@@ -1564,5 +1619,7 @@ object LogManager {
       time = time,
       remoteStorageSystemEnable = config.remoteLogManagerConfig.isRemoteStorageSystemEnabled,
       initialTaskDelayMs = config.logInitialTaskDelayMs)
+    logManager.updateCordonedLogDirs(config.cordonedLogDirs)
+    logManager
   }
 }

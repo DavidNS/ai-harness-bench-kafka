@@ -33,6 +33,8 @@ import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.EligibleLeaderReplicasVersion;
+import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
@@ -336,6 +338,8 @@ public class ConfigurationControlManager {
                 return DISALLOWED_BROKER_MIN_ISR_TRANSITION_ERROR;
             } else if (isDisallowedClusterMinIsrTransition(configRecord)) {
                 return DISALLOWED_CLUSTER_MIN_ISR_REMOVAL_ERROR;
+            } else if (isDisallowedCordonedLogDirsSetting(configRecord)) {
+                return DISALLOWED_CORDONED_LOG_DIRS_ERROR;
             } else if (configRecord.value() == null) {
                 allConfigs.remove(configRecord.name());
             } else if (configRecord.value().length() > Short.MAX_VALUE) {
@@ -389,6 +393,17 @@ public class ConfigurationControlManager {
     private static final ApiError DISALLOWED_CONFIG_VALUE_SIZE_ERROR =
         new ApiError(INVALID_CONFIG, "The configuration value cannot be added because " +
             "it exceeds the maximum value size of " + Short.MAX_VALUE + " bytes.");
+
+    private static final ApiError DISALLOWED_CORDONED_LOG_DIRS_ERROR =
+        new ApiError(INVALID_CONFIG, ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG +
+            " cannot be set before metadata version " + MetadataVersion.IBP_4_3_IV0 + ".");
+
+    boolean isDisallowedCordonedLogDirsSetting(ConfigRecord configRecord) {
+        return configRecord.name().equals(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG) &&
+            configRecord.resourceType() == BROKER.id() &&
+            configRecord.value() != null &&
+            !featureControl.metadataVersionOrThrow().isAtLeast(MetadataVersion.IBP_4_3_IV0);
+    }
 
     boolean isDisallowedBrokerMinIsrTransition(ConfigRecord configRecord) {
         if (configRecord.name().equals(MIN_IN_SYNC_REPLICAS_CONFIG) &&
