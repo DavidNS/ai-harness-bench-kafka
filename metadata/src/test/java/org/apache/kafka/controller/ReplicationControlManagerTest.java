@@ -83,6 +83,7 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.common.utils.annotation.ApiKeyVersionsSource;
 import org.apache.kafka.controller.BrokerHeartbeatManager.BrokerHeartbeatState;
 import org.apache.kafka.controller.ReplicationControlManager.KRaftClusterDescriber;
+import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.AssignmentsHelper;
 import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.metadata.BrokerRegistration;
@@ -3467,5 +3468,162 @@ public class ReplicationControlManagerTest {
         int partitionEpoch = ctx.replicationControl.getPartition(fooId, 0).partitionEpoch;
         ctx.replay(List.of(new ApiMessageAndVersion(new ClearElrRecord(), CLEAR_ELR_RECORD.highestSupportedVersion())));
         assertEquals(partitionEpoch, ctx.replicationControl.getPartition(fooId, 0).partitionEpoch);
+    }
+
+    private static ControllerResult<BrokerHeartbeatReply> heartbeatWithCordonedDirs(
+        ReplicationControlTestContext ctx,
+        int brokerId,
+        long currentMetadataOffset,
+        List<Uuid> cordonedLogDirs
+    ) {
+        return ctx.replicationControl.processBrokerHeartbeat(new BrokerHeartbeatRequestData().
+            setBrokerId(brokerId).setBrokerEpoch(defaultBrokerEpoch(brokerId)).
+            setCurrentMetadataOffset(currentMetadataOffset).
+            setWantFence(false).setWantShutDown(false).
+            setCordonedLogDirs(cordonedLogDirs), 0);
+    }
+
+    private static void assertNoReplicasOnBroker(
+        ReplicationControlTestContext ctx,
+        Uuid topicId,
+        int numPartitions,
+        int brokerId
+    ) {
+        for (int i = 0; i < numPartitions; i++) {
+            PartitionRegistration partition = ctx.replicationControl.getPartition(topicId, i);
+            assertNotNull(partition);
+            assertFalse(Replicas.contains(partition.replicas, brokerId));
+        }
+        assertNull(ctx.replicationControl.getPartition(topicId, numPartitions));
+    }
+
+    private static void cordonAllDirs(ReplicationControlTestContext ctx, int brokerId) {
+        List<Uuid> dirs = ctx.clusterControl.brokerRegistrations().get(brokerId).directories();
+        ControllerResult<BrokerHeartbeatReply> result = heartbeatWithCordonedDirs(ctx, brokerId, 1, dirs);
+        ctx.replay(result.records());
+        assertFalse(ctx.clusterControl.brokerRegistrations().get(brokerId).hasUncordonedDir());
+    }
+
+    @Test
+    public void testHeartbeatReportsCordonedDirs() {
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
+        Uuid dir1 = Uuid.fromString("QMzamNQVQ7GnJK9DwQHG7Q");
+        Uuid dir2 = Uuid.fromString("loDxEBLETdedNnQGOKKENw");
+        ctx.registerBrokersWithDirs(0, List.of(dir1, dir2));
+        ctx.unfenceBrokers(0);
+        ClusterControlManager clusterControl = ctx.clusterControl;
+
+        // The broker does not report the cordoned directories: nothing changes
+        assertEquals(List.of(), heartbeatWithCordonedDirs(ctx, 0, 1, null).records());
+
+        // Not caught up yet: the reported value is not trusted
+        assertEquals(List.of(), heartbeatWithCordonedDirs(ctx, 0, -1, List.of(dir1)).records());
+
+        ControllerResult<BrokerHeartbeatReply> result = heartbeatWithCordonedDirs(ctx, 0, 1, List.of(dir1));
+        assertEquals(1, result.records().size());
+        assertEquals((short) 3, result.records().get(0).version());
+        BrokerRegistrationChangeRecord record = (BrokerRegistrationChangeRecord) result.records().get(0).message();
+        assertEquals(List.of(dir1), record.cordonedLogDirs());
+        ctx.replay(result.records());
+        assertEquals(List.of(dir1), clusterControl.brokerRegistrations().get(0).cordonedDirectories());
+        assertTrue(clusterControl.brokerRegistrations().get(0).hasUncordonedDir());
+        assertTrue(clusterControl.hasUncordonedDir(0));
+
+        // Reporting the same directories again, or unknown ones, is a no-op
+        assertEquals(List.of(), heartbeatWithCordonedDirs(ctx, 0, 1, List.of(dir1)).records());
+        assertEquals(List.of(), heartbeatWithCordonedDirs(ctx, 0, 1, List.of(dir1, Uuid.randomUuid())).records());
+
+        // Cordoning everything
+        ctx.replay(heartbeatWithCordonedDirs(ctx, 0, 1, List.of(dir2, dir1)).records());
+        assertFalse(clusterControl.brokerRegistrations().get(0).hasUncordonedDir());
+        assertFalse(clusterControl.hasUncordonedDir(0));
+
+        // Uncordoning everything
+        result = heartbeatWithCordonedDirs(ctx, 0, 1, List.of());
+        assertEquals(List.of(), ((BrokerRegistrationChangeRecord) result.records().get(0).message()).cordonedLogDirs());
+        ctx.replay(result.records());
+        assertEquals(List.of(), clusterControl.brokerRegistrations().get(0).cordonedDirectories());
+        assertTrue(clusterControl.hasUncordonedDir(0));
+    }
+
+    @Test
+    public void testHeartbeatIgnoresCordonedDirsOnOldMetadataVersion() {
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().
+            setMetadataVersion(MetadataVersion.IBP_4_2_IV1).build();
+        Uuid dir = Uuid.fromString("QMzamNQVQ7GnJK9DwQHG7Q");
+        ctx.registerBrokersWithDirs(0, List.of(dir));
+        ctx.unfenceBrokers(0);
+        assertEquals(List.of(), heartbeatWithCordonedDirs(ctx, 0, 1, List.of(dir)).records());
+    }
+
+    @Test
+    public void testCordonedDirsAreWrittenToSnapshots() {
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
+        ctx.registerBrokers(0, 1, 2);
+        ctx.unfenceBrokers(0, 1, 2);
+        cordonAllDirs(ctx, 0);
+        BrokerRegistration registration = ctx.clusterControl.brokerRegistrations().get(0);
+        ImageWriterOptions options = new ImageWriterOptions.Builder(MetadataVersion.latestTesting()).build();
+        RegisterBrokerRecord snapshotRecord = (RegisterBrokerRecord) registration.toRecord(options).message();
+        assertEquals(registration.cordonedDirectories(), snapshotRecord.cordonedLogDirs());
+    }
+
+    @Test
+    public void testCreateTopicsAvoidsBrokersWithAllDirsCordoned() {
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
+        ctx.registerBrokers(0, 1, 2);
+        ctx.unfenceBrokers(0, 1, 2);
+        cordonAllDirs(ctx, 0);
+
+        // Only two brokers are usable
+        ctx.createTestTopic("foo", 1, (short) 3, INVALID_REPLICATION_FACTOR.code());
+        Uuid barId = ctx.createTestTopic("bar", 10, (short) 2, NONE.code()).topicId();
+        assertNoReplicasOnBroker(ctx, barId, 10, 0);
+
+        // Adding partitions without an assignment also avoids it
+        ControllerResult<List<CreatePartitionsTopicResult>> result = ctx.replicationControl.createPartitions(
+            anonymousContextFor(ApiKeys.CREATE_PARTITIONS),
+            List.of(new CreatePartitionsTopic().setName("bar").setCount(20).setAssignments(null)));
+        assertEquals(NONE.code(), result.response().get(0).errorCode());
+        ctx.replay(result.records());
+        assertNoReplicasOnBroker(ctx, barId, 20, 0);
+
+        // Once uncordoned the broker is used again
+        ctx.replay(heartbeatWithCordonedDirs(ctx, 0, 1, List.of()).records());
+        ctx.createTestTopic("foo", 1, (short) 3, NONE.code());
+    }
+
+    @Test
+    public void testManualAssignmentToBrokerWithAllDirsCordoned() {
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
+        ctx.registerBrokers(0, 1, 2);
+        ctx.unfenceBrokers(0, 1, 2);
+        cordonAllDirs(ctx, 0);
+
+        ctx.createTestTopic("foo", new int[][] {new int[] {0, 1}}, INVALID_REPLICA_ASSIGNMENT.code());
+        ctx.createTestTopic("foo", new int[][] {new int[] {1, 2}}, NONE.code());
+        ctx.createPartitions(2, "foo", new int[][] {new int[] {0, 1}}, INVALID_REPLICA_ASSIGNMENT.code());
+        ctx.createPartitions(2, "foo", new int[][] {new int[] {2, 1}}, NONE.code());
+    }
+
+    @Test
+    public void testReassignmentToBrokerWithAllDirsCordoned() {
+        ReplicationControlTestContext ctx = new ReplicationControlTestContext.Builder().build();
+        ctx.registerBrokers(0, 1, 2, 3);
+        ctx.unfenceBrokers(0, 1, 2, 3);
+        ctx.createTestTopic("foo", new int[][] {new int[] {1, 2}, new int[] {0, 1}});
+        cordonAllDirs(ctx, 0);
+
+        ControllerResult<AlterPartitionReassignmentsResponseData> result =
+            ctx.replicationControl.alterPartitionReassignments(
+                new AlterPartitionReassignmentsRequestData().setTopics(List.of(
+                    new ReassignableTopic().setName("foo").setPartitions(List.of(
+                        // Adds the cordoned broker
+                        new ReassignablePartition().setPartitionIndex(0).setReplicas(List.of(1, 0)),
+                        // Keeps the replica it already has on the cordoned broker
+                        new ReassignablePartition().setPartitionIndex(1).setReplicas(List.of(0, 3)))))));
+        List<ReassignablePartitionResponse> responses = result.response().responses().get(0).partitions();
+        assertEquals(INELIGIBLE_REPLICA.code(), responses.get(0).errorCode());
+        assertEquals(NONE.code(), responses.get(1).errorCode());
     }
 }

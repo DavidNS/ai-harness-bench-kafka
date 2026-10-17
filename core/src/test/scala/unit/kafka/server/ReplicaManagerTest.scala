@@ -5639,6 +5639,51 @@ class ReplicaManagerTest {
   }
 
   @Test
+  def testDescribeLogDirsShowsCordonedLogDirs(): Unit = {
+    val topicId = Uuid.randomUuid()
+    val (replicaManager, mockLogMgr) = prepareReplicaManagerAndLogManager(new MockTimer(time),
+      0, 3, 0, 1, new CountDownLatch(1),
+      expectTruncation = false, localLogOffset = Optional.of(10), offsetFromLeader = 5, topicId = Optional.of(topicId))
+
+    try {
+      replicaManager.describeLogDirs(Set(new TopicPartition(topic, 0))).forEach(response =>
+        assertFalse(response.isCordoned))
+
+      when(mockLogMgr.isLogDirCordoned(anyString)).thenReturn(true)
+      val responses = replicaManager.describeLogDirs(Set(new TopicPartition(topic, 0)))
+      assertEquals(mockLogMgr.liveLogDirs.size, responses.size)
+      responses.forEach { response =>
+        assertEquals(Errors.NONE.code, response.errorCode)
+        assertTrue(response.isCordoned)
+      }
+    } finally {
+      replicaManager.shutdown(checkpointHW = false)
+    }
+  }
+
+  @Test
+  def testAlterReplicaLogDirsToCordonedLogDir(): Unit = {
+    val topicId = Uuid.randomUuid()
+    val (replicaManager, mockLogMgr) = prepareReplicaManagerAndLogManager(new MockTimer(time),
+      0, 3, 0, 1, new CountDownLatch(1),
+      expectTruncation = false, localLogOffset = Optional.of(10), offsetFromLeader = 5, topicId = Optional.of(topicId))
+
+    try {
+      val currentDir = mockLogMgr.liveLogDirs.head.getAbsolutePath
+      val otherDir = currentDir + "-other"
+      val tp = new TopicPartition(topic, 0)
+      when(mockLogMgr.isLogDirCordoned(otherDir)).thenReturn(true)
+      // Moving a replica into a cordoned directory is rejected
+      assertEquals(Map(tp -> Errors.INVALID_REPLICA_ASSIGNMENT), replicaManager.alterReplicaLogDirs(Map(tp -> otherDir)))
+      // The replica already lives in the directory, so this is not a move
+      when(mockLogMgr.isLogDirCordoned(currentDir)).thenReturn(true)
+      assertNotEquals(Errors.INVALID_REPLICA_ASSIGNMENT, replicaManager.alterReplicaLogDirs(Map(tp -> currentDir))(tp))
+    } finally {
+      replicaManager.shutdown(checkpointHW = false)
+    }
+  }
+
+  @Test
   def testDescribeLogDirsWithoutAnyPartitionTopic(): Unit = {
     val noneTopic = "none-topic"
     val topicPartition = 0

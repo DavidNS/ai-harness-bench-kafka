@@ -494,6 +494,9 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
     require(logRollTimeJitterMillis >= 0, "log.roll.jitter.ms must be greater than or equal to 0")
     require(logRetentionTimeMillis >= 1 || logRetentionTimeMillis == -1, "log.retention.ms must be unlimited (-1) or, greater than or equal to 1")
     require(logDirs.size > 0, "At least one log directory must be defined via log.dirs or log.dir.")
+    // Throws a ConfigException if an entry is not one of the log directories. The dynamic updates of other brokers
+    // are validated without this config, since their log directories are not known here.
+    kafka.log.LogManager.resolveCordonedLogDirs(cordonedLogDirs, logDirs.asScala.map(new java.io.File(_)).toSeq)
     require(logCleanerDedupeBufferSize / logCleanerThreads > 1024 * 1024, "log.cleaner.dedupe.buffer.size must be at least 1MB per cleaner thread.")
     require(replicaFetchWaitMaxMs <= replicaSocketTimeoutMs, "replica.socket.timeout.ms should always be at least replica.fetch.wait.max.ms" +
       " to prevent unnecessary socket timeouts")

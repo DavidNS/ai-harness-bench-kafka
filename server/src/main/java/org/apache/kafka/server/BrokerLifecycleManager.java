@@ -147,6 +147,13 @@ public class BrokerLifecycleManager {
     private Map<Uuid, Boolean> offlineDirs = new HashMap<>();
 
     /**
+     * Supplies the directories that are cordoned, or null if they should not be reported to the
+     * controller, for example because the metadata version does not support cordoning yet.
+     * This can be read from the event queue thread, and written from any thread.
+     */
+    private volatile Supplier<Set<Uuid>> cordonedLogDirsSupplier = () -> null;
+
+    /**
      * True if we sent an event queue to the active controller requesting controlled
      * shutdown.  This variable can only be read or written from the event queue thread.
      */
@@ -523,6 +530,10 @@ public class BrokerLifecycleManager {
         }
     }
 
+    public void setCordonedLogDirsSupplier(Supplier<Set<Uuid>> cordonedLogDirsSupplier) {
+        this.cordonedLogDirsSupplier = cordonedLogDirsSupplier;
+    }
+
     private void sendBrokerHeartbeat() {
         Long metadataOffset = highestMetadataOffsetProvider.get();
         BrokerHeartbeatRequestData data = new BrokerHeartbeatRequestData()
@@ -532,6 +543,14 @@ public class BrokerLifecycleManager {
             .setWantFence(!readyToUnfence)
             .setWantShutDown(state == BrokerState.PENDING_CONTROLLED_SHUTDOWN)
             .setOfflineLogDirs(new ArrayList<>(offlineDirs.keySet()));
+        // The cordoned directories are only reported after the broker has caught up with the metadata,
+        // since before that it can't tell whether cordoning is supported.
+        if (state != BrokerState.STARTING) {
+            Set<Uuid> cordonedLogDirs = cordonedLogDirsSupplier.get();
+            if (cordonedLogDirs != null) {
+                data.setCordonedLogDirs(new ArrayList<>(cordonedLogDirs));
+            }
+        }
         if (logger.isTraceEnabled()) {
             logger.trace("Sending broker heartbeat {}", data);
         }

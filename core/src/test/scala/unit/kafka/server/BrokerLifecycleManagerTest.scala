@@ -249,6 +249,45 @@ class BrokerLifecycleManagerTest {
   }
 
   @Test
+  def testCordonedDirsSentInHeartbeatOnceCaughtUp(): Unit = {
+    val dir1 = Uuid.fromString("ad5FLIeCTnaQdai5vOjeng")
+    val dir2 = Uuid.fromString("ybdzUKmYSLK6oiIpI6CPlw")
+    val ctx = new RegistrationTestContext(configProperties)
+    manager = new BrokerLifecycleManager(ctx.config, ctx.time, "cordoned-dirs-sent-in-heartbeat-", util.Set.of(dir1, dir2))
+    @volatile var cordoned: util.Set[Uuid] = util.Set.of(dir1)
+    manager.setCordonedLogDirsSupplier(() => cordoned)
+    ctx.controllerNodeProvider.node.set(new Node(3000, "localhost", 8021))
+
+    val registration = prepareResponse(ctx, new BrokerRegistrationResponse(new BrokerRegistrationResponseData().setBrokerEpoch(1000)))
+    manager.start(() => ctx.highestMetadataOffset.get(),
+      ctx.mockChannelManager, ctx.clusterId, ctx.advertisedListeners,
+      Collections.emptyMap(), OptionalLong.empty())
+    poll(ctx, manager, registration)
+
+    // Nothing is reported before the broker has caught up with the metadata
+    val notCaughtUp = poll(ctx, manager, prepareResponse[BrokerHeartbeatRequest](ctx,
+      new BrokerHeartbeatResponse(new BrokerHeartbeatResponseData().setIsCaughtUp(false))))
+    assertNull(notCaughtUp.data().cordonedLogDirs())
+
+    val caughtUp = poll(ctx, manager, prepareResponse[BrokerHeartbeatRequest](ctx,
+      new BrokerHeartbeatResponse(new BrokerHeartbeatResponseData().setIsCaughtUp(true))))
+    assertNull(caughtUp.data().cordonedLogDirs())
+
+    // Afterwards the current value is sent with every heartbeat
+    def nextHeartbeatCordonedDirs(): util.List[Uuid] =
+      poll(ctx, manager, prepareResponse[BrokerHeartbeatRequest](ctx,
+        new BrokerHeartbeatResponse(new BrokerHeartbeatResponseData().setIsCaughtUp(true)))).data().cordonedLogDirs()
+    assertEquals(util.List.of(dir1), nextHeartbeatCordonedDirs())
+    cordoned = util.Set.of(dir1, dir2)
+    assertEquals(util.Set.of(dir1, dir2), new util.HashSet(nextHeartbeatCordonedDirs()))
+    cordoned = util.Set.of()
+    assertEquals(util.List.of(), nextHeartbeatCordonedDirs())
+    // The supplier returning null means the broker doesn't report anything, e.g. if the feature is not supported
+    cordoned = null
+    assertNull(nextHeartbeatCordonedDirs())
+  }
+
+  @Test
   def testRegistrationIncludesDirs(): Unit = {
     val logDirs = util.Set.of(Uuid.fromString("ad5FLIeCTnaQdai5vOjeng"), Uuid.fromString("ybdzUKmYSLK6oiIpI6CPlw"))
     val ctx = new RegistrationTestContext(configProperties)

@@ -431,6 +431,16 @@ The --verify option can be used with the tool to check the status of the partiti
 
 The partition reassignment tool does not have the ability to automatically generate a reassignment plan for decommissioning brokers yet. As such, the admin has to come up with a reassignment plan to move the replica for all partitions hosted on the broker to be decommissioned, to the rest of the brokers. This can be relatively tedious as the reassignment needs to ensure that all the replicas are not moved from the decommissioned broker to only one other broker. To make this process effortless, we plan to add tooling support for decommissioning brokers in the future. 
 
+## Cordoning log directories
+
+To stop new partitions from being placed on a log directory, or on a whole broker, without taking it out of service, cordon the directory with the dynamic broker config `cordoned.log.dirs` (requires metadata version 4.3-IV0 or higher). Partitions already in a cordoned directory keep being served. The value is a comma-separated list of directories from `log.dirs`, or `*` to cordon all of them. A broker whose directories are all cordoned does not receive any new partitions, which is useful before decommissioning it.
+
+```bash
+$ bin/kafka-configs.sh --bootstrap-server localhost:9092 --entity-type brokers --entity-name 1 --alter --add-config cordoned.log.dirs=/data/disk1
+```
+
+While a directory is cordoned, partition creation without an explicit assignment only uses brokers with at least one uncordoned directory, and explicit assignments, reassignments and `AlterReplicaLogDirs` requests that would add a replica to a cordoned directory or to a fully cordoned broker are rejected. `kafka-log-dirs.sh --describe` shows whether each directory is cordoned. Remove the config entry to uncordon the directory.
+
 ## Increasing replication factor
 
 Increasing the replication factor of an existing partition is easy. Just specify the extra replicas in the custom reassignment json file and use it with the --execute option to increase the replication factor of the specified partitions. 

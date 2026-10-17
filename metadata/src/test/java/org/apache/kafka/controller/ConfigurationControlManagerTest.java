@@ -34,6 +34,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.EligibleLeaderReplicasVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.config.ConfigSynonym;
+import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
 
@@ -552,6 +553,42 @@ public class ConfigurationControlManagerTest {
         } else {
             assertEquals(Errors.INVALID_UPDATE_VERSION, result.response().error());
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testCordonedLogDirsNeedMetadataVersion(boolean supported) {
+        FeatureControlManager featureManager = new FeatureControlManager.Builder().
+            setQuorumFeatures(new QuorumFeatures(0,
+                QuorumFeatures.defaultSupportedFeatureMap(true),
+                List.of())).
+            build();
+        featureManager.replay(new FeatureLevelRecord().
+            setName(MetadataVersion.FEATURE_NAME).
+            setFeatureLevel((supported ? MetadataVersion.IBP_4_3_IV0 : MetadataVersion.IBP_4_2_IV1).featureLevel()));
+        ConfigurationControlManager manager = new ConfigurationControlManager.Builder().
+            setFeatureControl(featureManager).
+            setKafkaConfigSchema(SCHEMA).
+            build();
+        ConfigResource broker = new ConfigResource(ConfigResource.Type.BROKER, "1");
+
+        ControllerResult<ApiError> result = manager.incrementalAlterConfig(broker,
+            toMap(entry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, entry(SET, "/tmp/a"))), true);
+        if (supported) {
+            assertEquals(Errors.NONE, result.response().error());
+        } else {
+            assertEquals(Errors.INVALID_CONFIG, result.response().error());
+            assertEquals("cordoned.log.dirs cannot be set while the metadata version is below 4.3-IV0.",
+                result.response().message());
+        }
+
+        // Removing the config, or setting it to the empty list, is always possible
+        result = manager.incrementalAlterConfig(broker,
+            toMap(entry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, entry(DELETE, null))), true);
+        assertEquals(Errors.NONE, result.response().error());
+        result = manager.incrementalAlterConfig(broker,
+            toMap(entry(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, entry(SET, ""))), true);
+        assertEquals(Errors.NONE, result.response().error());
     }
 
     private FeatureControlManager createFeatureControlManager() {

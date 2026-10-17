@@ -36,6 +36,7 @@ import org.apache.kafka.common.protocol.Errors.{INVALID_REQUEST, UNKNOWN_SERVER_
 import org.apache.kafka.common.requests.ApiError
 import org.apache.kafka.common.resource.{Resource, ResourceType}
 import org.apache.kafka.metadata.ConfigRepository
+import org.apache.kafka.server.config.ServerLogConfigs
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.{Map, Seq}
@@ -188,7 +189,18 @@ class ConfigAdminManager(nodeId: Int,
     configResource: ConfigResource
   ): Unit = {
     try {
-      conf.dynamicConfig.validate(props, configResource.name().nonEmpty)
+      // The cordoned log directories can only be checked against the log directories of the broker
+      // they are set for, so they are only validated by that broker.
+      val propsToValidate =
+        if (props.containsKey(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG) && configResource.name() != conf.nodeId.toString) {
+          val copy = new Properties()
+          copy.putAll(props)
+          copy.remove(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG)
+          copy
+        } else {
+          props
+        }
+      conf.dynamicConfig.validate(propsToValidate, configResource.name().nonEmpty)
     } catch {
       case e: ApiException => throw e
       //KAFKA-13609: InvalidRequestException is not really the right exception here if the

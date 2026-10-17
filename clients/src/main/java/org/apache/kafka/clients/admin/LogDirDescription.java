@@ -33,12 +33,18 @@ public class LogDirDescription {
     private final ApiException error;
     private final OptionalLong totalBytes;
     private final OptionalLong usableBytes;
+    private final boolean isCordoned;
 
     public LogDirDescription(ApiException error, Map<TopicPartition, ReplicaInfo> replicaInfos) {
         this(error, replicaInfos, UNKNOWN_VOLUME_BYTES, UNKNOWN_VOLUME_BYTES);
     }
 
     public LogDirDescription(ApiException error, Map<TopicPartition, ReplicaInfo> replicaInfos, long totalBytes, long usableBytes) {
+        this(error, replicaInfos, totalBytes, usableBytes, false);
+    }
+
+    public LogDirDescription(ApiException error, Map<TopicPartition, ReplicaInfo> replicaInfos, long totalBytes, long usableBytes, boolean isCordoned) {
+        this.isCordoned = isCordoned;
         this.error = error;
         this.replicaInfos = replicaInfos;
         this.totalBytes = (totalBytes == UNKNOWN_VOLUME_BYTES) ? OptionalLong.empty() : OptionalLong.of(totalBytes);
@@ -82,6 +88,15 @@ public class LogDirDescription {
         return usableBytes;
     }
 
+    /**
+     * Whether this log directory is cordoned, meaning that no new partitions are placed on it.
+     * Existing partitions in a cordoned log directory keep being served.
+     * This is always false if the broker does not support cordoning log directories.
+     */
+    public boolean isCordoned() {
+        return isCordoned;
+    }
+
     @Override
     public String toString() {
         return "LogDirDescription(" +
@@ -89,6 +104,7 @@ public class LogDirDescription {
                 ", error=" + error +
                 ", totalBytes=" + totalBytes +
                 ", usableBytes=" + usableBytes +
+                ", isCordoned=" + isCordoned +
                 ')';
     }
 }

@@ -32,6 +32,7 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.config.ServerLogConfigs;
 import org.apache.kafka.server.common.EligibleLeaderReplicasVersion;
 import org.apache.kafka.server.mutable.BoundedList;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
@@ -338,6 +339,8 @@ public class ConfigurationControlManager {
                 return DISALLOWED_CLUSTER_MIN_ISR_REMOVAL_ERROR;
             } else if (configRecord.value() == null) {
                 allConfigs.remove(configRecord.name());
+            } else if (isDisallowedCordonedLogDirs(configRecord)) {
+                return DISALLOWED_CORDONED_LOG_DIRS_ERROR;
             } else if (configRecord.value().length() > Short.MAX_VALUE) {
                 // In KRaft mode, large config values cannot be created by appending.
                 // If the size exceeds Short.MAX_VALUE, this error will be thrown to notify the user.
@@ -377,6 +380,21 @@ public class ConfigurationControlManager {
         }
         return ApiError.NONE;
     }
+
+    /**
+     * Cordoning log directories needs a metadata version that supports it. Removing the config or
+     * setting it to the empty list is always allowed.
+     */
+    private boolean isDisallowedCordonedLogDirs(ConfigRecord record) {
+        return record.resourceType() == BROKER.id() &&
+            ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG.equals(record.name()) &&
+            record.value() != null && !record.value().isBlank() &&
+            featureControl.metadataVersion().map(mv -> !mv.isCordonedLogDirsSupported()).orElse(false);
+    }
+
+    private static final ApiError DISALLOWED_CORDONED_LOG_DIRS_ERROR =
+        new ApiError(INVALID_CONFIG, ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG +
+            " cannot be set while the metadata version is below 4.3-IV0.");
 
     private static final ApiError DISALLOWED_BROKER_MIN_ISR_TRANSITION_ERROR =
         new ApiError(INVALID_CONFIG, "Broker-level " + MIN_IN_SYNC_REPLICAS_CONFIG +

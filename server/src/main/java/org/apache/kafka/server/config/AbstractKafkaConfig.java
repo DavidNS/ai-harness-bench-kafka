@@ -92,6 +92,10 @@ public abstract class AbstractKafkaConfig extends AbstractConfig {
         return Optional.ofNullable(getList(ServerLogConfigs.LOG_DIRS_CONFIG)).orElse(getList(ServerLogConfigs.LOG_DIR_CONFIG));
     }
 
+    public List<String> cordonedLogDirs() {
+        return getList(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG);
+    }
+
     public int numIoThreads() {
         return getInt(ServerConfigs.NUM_IO_THREADS_CONFIG);
     }

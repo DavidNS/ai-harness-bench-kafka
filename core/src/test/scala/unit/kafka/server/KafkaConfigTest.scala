@@ -770,6 +770,25 @@ class KafkaConfigTest {
   }
 
   @Test
+  def testCordonedLogDirs(): Unit = {
+    val props = TestUtils.createBrokerConfig(0)
+    props.setProperty(ServerLogConfigs.LOG_DIRS_CONFIG, "/tmp/a,/tmp/b")
+    assertEquals(util.List.of(), KafkaConfig.fromProps(props).cordonedLogDirs)
+
+    props.setProperty(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, "/tmp/b")
+    assertEquals(util.List.of("/tmp/b"), KafkaConfig.fromProps(props).cordonedLogDirs)
+
+    props.setProperty(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, "/tmp/a, /tmp/b")
+    assertEquals(util.List.of("/tmp/a", "/tmp/b"), KafkaConfig.fromProps(props).cordonedLogDirs)
+
+    props.setProperty(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+    assertEquals(util.List.of("*"), KafkaConfig.fromProps(props).cordonedLogDirs)
+
+    props.setProperty(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, "/tmp/a,/tmp/c")
+    assertThrows(classOf[ConfigException], () => KafkaConfig.fromProps(props))
+  }
+
+  @Test
   def testFromPropsInvalid(): Unit = {
     def baseProperties: Properties = {
       val validRequiredProperties = new Properties()
@@ -828,6 +847,7 @@ class KafkaConfigTest {
         case ServerLogConfigs.NUM_PARTITIONS_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", "0")
         case ServerLogConfigs.LOG_DIRS_CONFIG => assertPropertyInvalid(baseProperties, name, "")
         case ServerLogConfigs.LOG_DIR_CONFIG => assertPropertyInvalid(baseProperties, name, "")
+        case ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG => assertPropertyInvalid(baseProperties, name, "/not/a/log/dir")
         case ServerLogConfigs.LOG_SEGMENT_BYTES_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", Records.LOG_OVERHEAD - 1)
 
         case ServerLogConfigs.LOG_ROLL_TIME_MILLIS_CONFIG => assertPropertyInvalid(baseProperties, name, "not_a_number", "0")

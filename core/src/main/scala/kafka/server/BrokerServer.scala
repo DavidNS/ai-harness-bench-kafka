@@ -218,11 +218,16 @@ class BrokerServer(
         brokerTopicStats,
         logDirFailureChannel)
 
+      // Cordoning log directories only takes effect once the metadata version supports it
+      logManager.setCordonedLogDirsEnabled(() => metadataCache.isCordonedLogDirsSupported)
+
       lifecycleManager = new BrokerLifecycleManager(config,
         time,
         s"broker-${config.nodeId}-",
         logManager.directoryIdsSet.asJava,
         () => new Thread(() => shutdown(), "kafka-shutdown-thread").start())
+      lifecycleManager.setCordonedLogDirsSupplier(() =>
+        if (metadataCache.isCordonedLogDirsSupported) logManager.cordonedDirectoryIds.asJava else null)
 
       // Enable delegation token cache for all SCRAM mechanisms to simplify dynamic update.
       // This keeps the cache up-to-date if new SCRAM mechanisms are enabled dynamically.

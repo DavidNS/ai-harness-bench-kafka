@@ -301,6 +301,47 @@ public class ClusterImageTest {
     }
 
     @Test
+    public void testApplyCordonedLogDirsChange() {
+        Uuid dir1 = Uuid.fromString("QMzamNQVQ7GnJK9DwQHG7Q");
+        Uuid dir2 = Uuid.fromString("loDxEBLETdedNnQGOKKENw");
+        BrokerRegistration broker = new BrokerRegistration.Builder().
+            setId(0).
+            setEpoch(1000).
+            setIncarnationId(Uuid.fromString("vZKYST0pSA2HO5x_6hoO2Q")).
+            setListeners(List.of(new Endpoint("PLAINTEXT", SecurityProtocol.PLAINTEXT, "localhost", 9092))).
+            setSupportedFeatures(Map.of("foo", VersionRange.of((short) 1, (short) 3))).
+            setRack(Optional.empty()).
+            setDirectories(List.of(dir1, dir2)).
+            build();
+        ClusterImage image = new ClusterImage(Map.of(0, broker), Map.of());
+
+        // Cordon one directory
+        ClusterDelta delta = new ClusterDelta(image);
+        delta.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(0).setBrokerEpoch(1000).setCordonedLogDirs(List.of(dir2)));
+        ClusterImage cordoned = delta.apply();
+        assertEquals(List.of(dir2), cordoned.broker(0).cordonedDirectories());
+        assertEquals(List.of(dir1, dir2).stream().sorted().toList(), cordoned.broker(0).directories());
+
+        // A change that doesn't mention the cordoned directories leaves them alone
+        delta = new ClusterDelta(cordoned);
+        delta.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(0).setBrokerEpoch(1000).setFenced((byte) 1));
+        assertEquals(List.of(dir2), delta.apply().broker(0).cordonedDirectories());
+
+        // The cordoned directories survive a snapshot
+        RecordListWriter writer = new RecordListWriter();
+        cordoned.write(writer, new ImageWriterOptions.Builder(MetadataVersion.IBP_4_3_IV0).build());
+        testToImage(cordoned, writer.records());
+
+        // An empty list uncordons everything
+        delta = new ClusterDelta(cordoned);
+        delta.replay(new BrokerRegistrationChangeRecord().
+            setBrokerId(0).setBrokerEpoch(1000).setCordonedLogDirs(List.of()));
+        assertEquals(List.of(), delta.apply().broker(0).cordonedDirectories());
+    }
+
+    @Test
     public void testHandleLossOfControllerRegistrations() {
         ClusterImage testImage = new ClusterImage(Map.of(),
             Map.of(1000, new ControllerRegistration.Builder().

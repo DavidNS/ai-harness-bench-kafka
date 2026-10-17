@@ -510,6 +510,15 @@ public class KRaftMetadataCache implements MetadataCache {
         return currentImage.features().metadataVersionOrThrow();
     }
 
+    /**
+     * Returns true if the metadata version is known and supports cordoning log directories (KIP-1066).
+     */
+    public boolean isCordonedLogDirsSupported() {
+        return currentImage.features().metadataVersion()
+            .map(MetadataVersion::isCordonedLogDirsSupported)
+            .orElse(false);
+    }
+
     @Override
     public FinalizedFeatures features() {
         MetadataImage image = currentImage;

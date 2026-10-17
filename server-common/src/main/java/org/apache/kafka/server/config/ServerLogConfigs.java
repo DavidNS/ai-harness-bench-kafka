@@ -40,6 +40,16 @@ public class ServerLogConfigs {
     public static final String LOG_DIR_DOC = "A comma-separated list of the directories where the log data is stored. (supplemental to " + LOG_DIRS_CONFIG + " property)";
     public static final String LOG_DIRS_DOC = "A comma-separated list of the directories where the log data is stored. If not set, the value in " + LOG_DIR_CONFIG + " is used.";
 
+    public static final String CORDONED_LOG_DIRS_CONFIG = "cordoned.log.dirs";
+    public static final String CORDONED_LOG_DIRS_ALL = "*";
+    public static final String CORDONED_LOG_DIRS_DEFAULT = "";
+    public static final String CORDONED_LOG_DIRS_DOC = "A comma-separated list of the directories that are cordoned. " +
+        "Entries must be directories listed in " + LOG_DIRS_CONFIG + " or " + LOG_DIR_CONFIG + ". " +
+        "The value \"" + CORDONED_LOG_DIRS_ALL + "\" cordons all of them. " +
+        "New partitions are not placed on cordoned directories, while existing partitions in them keep being served. " +
+        "A broker whose directories are all cordoned does not receive new partitions. " +
+        "Requires metadata version 4.3-IV0 or higher, otherwise this setting has no effect.";
+
     public static final String LOG_SEGMENT_BYTES_CONFIG = ServerTopicConfigSynonyms.serverSynonym(TopicConfig.SEGMENT_BYTES_CONFIG);
     public static final String LOG_SEGMENT_BYTES_DOC = "The maximum size of a single log file";
 

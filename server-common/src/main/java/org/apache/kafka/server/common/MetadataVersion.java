@@ -127,7 +127,7 @@ public enum MetadataVersion {
     // Please move this comment when updating the LATEST_PRODUCTION constant.
     //
 
-    // New version for the Kafka 4.3.0 release.
+    // New version for the Kafka 4.3.0 release. Adds cordoned log directories (KIP-1066).
     IBP_4_3_IV0(30, "4.3", "IV0", false);
 
     // NOTES when adding a new version:
@@ -212,8 +212,15 @@ public enum MetadataVersion {
         return this.isAtLeast(MetadataVersion.IBP_3_4_IV0);
     }
 
+    public boolean isCordonedLogDirsSupported() {
+        return this.isAtLeast(IBP_4_3_IV0);
+    }
+
     public short registerBrokerRecordVersion() {
-        if (isDirectoryAssignmentSupported()) {
+        if (isCordonedLogDirsSupported()) {
+            // new cordonedLogDirs field
+            return (short) 4;
+        } else if (isDirectoryAssignmentSupported()) {
             // new logDirs field
             return (short) 3;
         } else if (isMigrationSupported()) {

@@ -31,6 +31,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -53,6 +54,7 @@ public class BrokerRegistration {
         private boolean inControlledShutdown;
         private boolean isMigratingZkBroker;
         private List<Uuid> directories;
+        private List<Uuid> cordonedDirectories;
 
         public Builder() {
             this.id = 0;
@@ -65,6 +67,7 @@ public class BrokerRegistration {
             this.inControlledShutdown = false;
             this.isMigratingZkBroker = false;
             this.directories = List.of();
+            this.cordonedDirectories = List.of();
         }
 
         public Builder setId(int id) {
@@ -127,6 +130,11 @@ public class BrokerRegistration {
             return this;
         }
 
+        public Builder setCordonedDirectories(List<Uuid> cordonedDirectories) {
+            this.cordonedDirectories = cordonedDirectories;
+            return this;
+        }
+
         public BrokerRegistration build() {
             return new BrokerRegistration(
                 id,
@@ -138,7 +146,8 @@ public class BrokerRegistration {
                 fenced,
                 inControlledShutdown,
                 isMigratingZkBroker,
-                directories);
+                directories,
+                cordonedDirectories);
         }
     }
 
@@ -152,6 +161,7 @@ public class BrokerRegistration {
     private final boolean inControlledShutdown;
     private final boolean isMigratingZkBroker;
     private final List<Uuid> directories;
+    private final List<Uuid> cordonedDirectories;
 
     private BrokerRegistration(
         int id,
@@ -163,7 +173,8 @@ public class BrokerRegistration {
         boolean fenced,
         boolean inControlledShutdown,
         boolean isMigratingZkBroker,
-        List<Uuid> directories
+        List<Uuid> directories,
+        List<Uuid> cordonedDirectories
     ) {
         this.id = id;
         this.epoch = epoch;
@@ -185,6 +196,9 @@ public class BrokerRegistration {
         directories = new ArrayList<>(directories);
         directories.sort(Uuid::compareTo);
         this.directories = Collections.unmodifiableList(directories);
+        List<Uuid> sortedCordonedDirectories = new ArrayList<>(cordonedDirectories);
+        sortedCordonedDirectories.sort(Uuid::compareTo);
+        this.cordonedDirectories = Collections.unmodifiableList(sortedCordonedDirectories);
     }
 
     public static BrokerRegistration fromRecord(RegisterBrokerRecord record) {
@@ -209,7 +223,8 @@ public class BrokerRegistration {
             record.fenced(),
             record.inControlledShutdown(),
             record.isMigratingZkBroker(),
-            record.logDirs());
+            record.logDirs(),
+            record.cordonedLogDirs());
     }
 
     public int id() {
@@ -260,6 +275,34 @@ public class BrokerRegistration {
         return directories;
     }
 
+    /**
+     * The log directories of this broker which are cordoned. New partitions are not placed on these.
+     */
+    public List<Uuid> cordonedDirectories() {
+        return cordonedDirectories;
+    }
+
+    /**
+     * True if the broker has at least one online log directory that is not cordoned, meaning that
+     * new partitions can be placed on it. Brokers which have not reported any directories (for
+     * example because the metadata version is too old) are always considered to have one.
+     */
+    public boolean hasUncordonedDir() {
+        if (directories.isEmpty()) {
+            return true;
+        }
+        for (Uuid directory : directories) {
+            if (!cordonedDirectories.contains(directory)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean isDirCordoned(Uuid dir) {
+        return cordonedDirectories.contains(dir);
+    }
+
     public boolean hasOnlineDir(Uuid dir) {
         return DirectoryId.isOnline(dir, directories);
     }
@@ -307,6 +350,14 @@ public class BrokerRegistration {
             options.handleLoss("the online log directories of one or more brokers");
         }
 
+        if (!cordonedDirectories.isEmpty()) {
+            if (options.metadataVersion().isCordonedLogDirsSupported()) {
+                registrationRecord.setCordonedLogDirs(cordonedDirectories);
+            } else {
+                options.handleLoss("the cordoned log directories of one or more brokers");
+            }
+        }
+
         for (Entry<String, Endpoint> entry : listeners.entrySet()) {
             Endpoint endpoint = entry.getValue();
             registrationRecord.endPoints().add(new BrokerEndpoint().
@@ -330,7 +381,7 @@ public class BrokerRegistration {
     @Override
     public int hashCode() {
         return Objects.hash(id, epoch, incarnationId, listeners, supportedFeatures,
-            rack, fenced, inControlledShutdown, isMigratingZkBroker, directories);
+            rack, fenced, inControlledShutdown, isMigratingZkBroker, directories, cordonedDirectories);
     }
 
     @Override
@@ -345,7 +396,8 @@ public class BrokerRegistration {
             other.fenced == fenced &&
             other.inControlledShutdown == inControlledShutdown &&
             other.isMigratingZkBroker == isMigratingZkBroker &&
-            other.directories.equals(directories);
+            other.directories.equals(directories) &&
+            other.cordonedDirectories.equals(cordonedDirectories);
     }
 
     @Override
@@ -367,6 +419,7 @@ public class BrokerRegistration {
                 ", inControlledShutdown=" + inControlledShutdown +
                 ", isMigratingZkBroker=" + isMigratingZkBroker +
                 ", directories=" + directories +
+                (cordonedDirectories.isEmpty() ? "" : ", cordonedDirectories=" + cordonedDirectories) +
                 ")";
     }
 
@@ -375,11 +428,24 @@ public class BrokerRegistration {
         Optional<Boolean> inControlledShutdownChange,
         Optional<List<Uuid>> directoriesChange
     ) {
+        return cloneWith(fencingChange, inControlledShutdownChange, directoriesChange, Optional.empty());
+    }
+
+    public BrokerRegistration cloneWith(
+        Optional<Boolean> fencingChange,
+        Optional<Boolean> inControlledShutdownChange,
+        Optional<List<Uuid>> directoriesChange,
+        Optional<List<Uuid>> cordonedDirectoriesChange
+    ) {
         boolean newFenced = fencingChange.orElse(fenced);
         boolean newInControlledShutdownChange = inControlledShutdownChange.orElse(inControlledShutdown);
         List<Uuid> newDirectories = directoriesChange.orElse(directories);
+        List<Uuid> newCordonedDirectories = cordonedDirectoriesChange.orElse(cordonedDirectories);
 
-        if (newFenced == fenced && newInControlledShutdownChange == inControlledShutdown && newDirectories.equals(directories))
+        if (newFenced == fenced &&
+            newInControlledShutdownChange == inControlledShutdown &&
+            newDirectories.equals(directories) &&
+            new HashSet<>(newCordonedDirectories).equals(new HashSet<>(cordonedDirectories)))
             return this;
 
         return new BrokerRegistration(
@@ -392,7 +458,8 @@ public class BrokerRegistration {
             newFenced,
             newInControlledShutdownChange,
             isMigratingZkBroker,
-            newDirectories
+            newDirectories,
+            newCordonedDirectories
         );
     }
 }

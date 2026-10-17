@@ -18,7 +18,7 @@
   "type": "request",
   "listeners": ["controller"],
   "name": "BrokerHeartbeatRequest",
-  "validVersions": "0-1",
+  "validVersions": "0-2",
   "flexibleVersions": "0+",
   "fields": [
     { "name": "BrokerId", "type": "int32", "versions": "0+", "entityType": "brokerId",
@@ -32,6 +32,8 @@
     { "name": "WantShutDown", "type": "bool", "versions": "0+",
       "about": "True if the broker wants to be shut down, false otherwise." },
     { "name": "OfflineLogDirs", "type":  "[]uuid", "versions": "1+", "taggedVersions": "1+", "tag": 0,
-      "about": "Log directories that failed and went offline." }
+      "about": "Log directories that failed and went offline." },
+    { "name": "CordonedLogDirs", "type": "[]uuid", "versions": "2+", "nullableVersions": "2+", "default": "null", "ignorable": true, "taggedVersions": "2+", "tag": 1,
+      "about": "Log directories that are cordoned, meaning no new partitions are placed on them, or null if the broker does not report them." }
   ]
 }

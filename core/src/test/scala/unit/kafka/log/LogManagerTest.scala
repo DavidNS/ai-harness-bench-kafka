@@ -20,8 +20,8 @@ package kafka.log
 import com.yammer.metrics.core.{Gauge, MetricName}
 import kafka.utils._
 import org.apache.directory.api.util.FileUtils
-import org.apache.kafka.common.config.TopicConfig
-import org.apache.kafka.common.errors.OffsetOutOfRangeException
+import org.apache.kafka.common.config.{ConfigException, TopicConfig}
+import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeException}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{DirectoryId, KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.transaction.TransactionLogConfig
@@ -40,6 +40,7 @@ import java.nio.file.attribute.PosixFilePermission
 import java.util
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import java.util.{Collections, Optional, OptionalLong, Properties}
+import org.apache.kafka.server.config.ServerLogConfigs
 import org.apache.kafka.server.metrics.KafkaYammerMetrics
 import org.apache.kafka.server.storage.log.FetchIsolation
 import org.apache.kafka.server.util.{FileLock, KafkaScheduler, MockTime, Scheduler}
@@ -147,6 +148,100 @@ class LogManagerTest {
     assertTrue(logFile.exists)
     assertFalse(logManager.directoryId(logFile.getParent).equals(DirectoryId.random()))
     log.appendAsLeader(TestUtils.singletonRecords("test".getBytes()), 0)
+  }
+
+  private def metricValue(name: String, logDir: Option[File] = None): Any = {
+    val metrics = KafkaYammerMetrics.defaultRegistry().allMetrics().asScala.filter { case (metricName, _) =>
+      metricName.getType == "LogManager" && metricName.getName == name &&
+        logDir.forall(dir => metricName.getMBeanName.contains(dir.getAbsolutePath))
+    }
+    assertEquals(1, metrics.size, s"Expected exactly one metric named $name")
+    metrics.head._2.asInstanceOf[Gauge[_]].value()
+  }
+
+  @Test
+  def testCordonedLogDirsAreNotUsedForNewLogs(): Unit = {
+    val dirs = Seq.fill(3)(TestUtils.tempDir())
+    dirs.foreach(dir => writeMetaProperties(dir, Optional.of(DirectoryId.random())))
+    logManager.shutdown()
+    logManager = createLogManager(dirs)
+    assertEquals(Set.empty, logManager.cordonedLogDirs)
+    assertEquals(0, metricValue("CordonedLogDirectoryCount"))
+
+    logManager.updateCordonedLogDirs(util.List.of(dirs.head.getAbsolutePath, dirs(1).getPath))
+    assertEquals(Set(dirs.head.getAbsolutePath, dirs(1).getAbsolutePath), logManager.cordonedLogDirs)
+    assertEquals(2, metricValue("CordonedLogDirectoryCount"))
+    assertEquals(1, metricValue("LogDirectoryCordoned", Some(dirs.head)))
+    assertEquals(1, metricValue("LogDirectoryCordoned", Some(dirs(1))))
+    assertEquals(0, metricValue("LogDirectoryCordoned", Some(dirs(2))))
+    assertEquals(Set(logManager.directoryId(dirs.head.getAbsolutePath).get, logManager.directoryId(dirs(1).getAbsolutePath).get),
+      logManager.cordonedDirectoryIds)
+
+    // New logs are only created in the directory which is not cordoned
+    for (i <- 0 until 6) {
+      val log = logManager.getOrCreateLog(new TopicPartition(name, i), topicId = Optional.empty)
+      assertEquals(dirs(2).getAbsolutePath, log.parentDir)
+    }
+
+    // The controller suggesting a cordoned directory makes no difference
+    val cordonedId = logManager.directoryId(dirs.head.getAbsolutePath).get
+    val log = logManager.getOrCreateLog(new TopicPartition(name, 6), topicId = Optional.empty, targetLogDirectoryId = Some(cordonedId))
+    assertEquals(dirs(2).getAbsolutePath, log.parentDir)
+
+    // Neither does a preferred directory which was recorded before it got cordoned
+    logManager.maybeUpdatePreferredLogDir(new TopicPartition(name, 7), dirs(1).getAbsolutePath)
+    assertEquals(dirs(2).getAbsolutePath, logManager.getOrCreateLog(new TopicPartition(name, 7), topicId = Optional.empty).parentDir)
+
+    // Uncordoning makes the directories usable again
+    logManager.updateCordonedLogDirs(util.List.of())
+    assertEquals(Set.empty, logManager.cordonedLogDirs)
+    assertEquals(0, metricValue("CordonedLogDirectoryCount"))
+    assertEquals(0, metricValue("LogDirectoryCordoned", Some(dirs.head)))
+    val newLog = logManager.getOrCreateLog(new TopicPartition(name, 8), topicId = Optional.empty, targetLogDirectoryId = Some(cordonedId))
+    assertEquals(dirs.head.getAbsolutePath, newLog.parentDir)
+  }
+
+  @Test
+  def testAllLogDirsCordoned(): Unit = {
+    val dirs = Seq.fill(2)(TestUtils.tempDir())
+    logManager.shutdown()
+    logManager = createLogManager(dirs)
+    logManager.updateCordonedLogDirs(util.List.of(ServerLogConfigs.CORDONED_LOG_DIRS_ALL))
+    assertEquals(dirs.map(_.getAbsolutePath).toSet, logManager.cordonedLogDirs)
+    assertThrows(classOf[KafkaStorageException],
+      () => logManager.getOrCreateLog(new TopicPartition(name, 0), topicId = Optional.empty))
+    // Existing logs are not affected
+    logManager.updateCordonedLogDirs(util.List.of())
+    val log = logManager.getOrCreateLog(new TopicPartition(name, 0), topicId = Optional.empty)
+    logManager.updateCordonedLogDirs(util.List.of(ServerLogConfigs.CORDONED_LOG_DIRS_ALL))
+    assertSame(log, logManager.getOrCreateLog(new TopicPartition(name, 0), topicId = Optional.empty))
+  }
+
+  @Test
+  def testCordonedLogDirsOnlyHaveAnEffectWhenEnabled(): Unit = {
+    logManager.updateCordonedLogDirs(util.List.of(ServerLogConfigs.CORDONED_LOG_DIRS_ALL))
+    assertEquals(Set(logDir.getAbsolutePath), logManager.cordonedLogDirs)
+    var enabled = false
+    logManager.setCordonedLogDirsEnabled(() => enabled)
+    assertEquals(Set.empty, logManager.cordonedLogDirs)
+    assertFalse(logManager.isLogDirCordoned(logDir.getAbsolutePath))
+    assertEquals(Set.empty, logManager.cordonedDirectoryIds)
+    assertEquals(0, metricValue("CordonedLogDirectoryCount"))
+    assertNotNull(logManager.getOrCreateLog(new TopicPartition(name, 0), topicId = Optional.empty))
+    enabled = true
+    assertTrue(logManager.isLogDirCordoned(logDir.getAbsolutePath))
+    assertEquals(1, metricValue("CordonedLogDirectoryCount"))
+  }
+
+  @Test
+  def testInvalidCordonedLogDirs(): Unit = {
+    val e = assertThrows(classOf[ConfigException],
+      () => logManager.updateCordonedLogDirs(util.List.of(logDir.getAbsolutePath, "/not/a/log/dir")))
+    assertTrue(e.getMessage.contains("/not/a/log/dir"))
+    assertEquals(Set.empty, logManager.cordonedLogDirs)
+    assertThrows(classOf[ConfigException], () => logManager.validateCordonedLogDirs(util.List.of("/not/a/log/dir")))
+    logManager.validateCordonedLogDirs(util.List.of(logDir.getAbsolutePath))
+    logManager.validateCordonedLogDirs(util.List.of())
   }
 
   /**

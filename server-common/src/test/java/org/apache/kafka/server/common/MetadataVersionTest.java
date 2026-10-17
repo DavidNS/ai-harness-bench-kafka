@@ -204,6 +204,12 @@ class MetadataVersionTest {
 
     @ParameterizedTest
     @EnumSource(value = MetadataVersion.class)
+    public void testCordonedLogDirsSupported(MetadataVersion metadataVersion) {
+        assertEquals(metadataVersion.isAtLeast(MetadataVersion.IBP_4_3_IV0), metadataVersion.isCordonedLogDirsSupported());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = MetadataVersion.class)
     public void testIsElrSupported(MetadataVersion metadataVersion) {
         assertEquals(metadataVersion.isAtLeast(IBP_4_0_IV1), metadataVersion.isElrSupported());
     }
@@ -240,7 +246,9 @@ class MetadataVersionTest {
     @EnumSource(value = MetadataVersion.class)
     public void testRegisterBrokerRecordVersion(MetadataVersion metadataVersion) {
         final short expectedVersion;
-        if (metadataVersion.isAtLeast(MetadataVersion.IBP_3_7_IV2)) {
+        if (metadataVersion.isAtLeast(MetadataVersion.IBP_4_3_IV0)) {
+            expectedVersion = 4;
+        } else if (metadataVersion.isAtLeast(MetadataVersion.IBP_3_7_IV2)) {
             expectedVersion = 3;
         } else if (metadataVersion.isAtLeast(MetadataVersion.IBP_3_4_IV0)) {
             expectedVersion = 2;

@@ -720,6 +720,38 @@ class DynamicBrokerConfigTest {
   }
 
   @Test
+  def testDynamicCordonedLogDirsConfig(): Unit = {
+    val props = TestUtils.createBrokerConfig(0, port = 8181)
+    props.put(ServerLogConfigs.LOG_DIRS_CONFIG, "/tmp/a,/tmp/b,/tmp/c")
+    val config = KafkaConfig(props)
+    assertEquals(util.List.of(), config.cordonedLogDirs)
+    val logManager = mock(classOf[LogManager])
+    config.dynamicConfig.initialize(None)
+    config.dynamicConfig.addBrokerReconfigurable(new DynamicCordonedLogDirsConfig(logManager))
+
+    val newProps = new Properties()
+    newProps.put(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, "/tmp/a,/tmp/b")
+
+    // The cordoned directories are specific to a broker, so they can't be set for the whole cluster
+    assertThrows(classOf[ConfigException], () => config.dynamicConfig.validate(newProps, perBrokerConfig = false))
+    config.dynamicConfig.validate(newProps, perBrokerConfig = true)
+    verify(logManager).validateCordonedLogDirs(util.List.of("/tmp/a", "/tmp/b"))
+
+    config.dynamicConfig.updateBrokerConfig(0, newProps)
+    assertEquals(util.List.of("/tmp/a", "/tmp/b"), config.cordonedLogDirs)
+    verify(logManager).updateCordonedLogDirs(util.List.of("/tmp/a", "/tmp/b"))
+
+    // Entries which are not log directories of the broker are rejected
+    newProps.put(ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, "/tmp/d")
+    assertThrows(classOf[ConfigException], () => config.dynamicConfig.validate(newProps, perBrokerConfig = true))
+
+    // Removing the config uncordons everything
+    config.dynamicConfig.updateBrokerConfig(0, new Properties())
+    assertEquals(util.List.of(), config.cordonedLogDirs)
+    verify(logManager).updateCordonedLogDirs(util.List.of())
+  }
+
+  @Test
   def testDynamicLogLocalRetentionSizeConfig(): Unit = {
     val props = TestUtils.createBrokerConfig(0, port = 8181)
     props.put(ServerLogConfigs.LOG_RETENTION_BYTES_CONFIG, "4294967296")

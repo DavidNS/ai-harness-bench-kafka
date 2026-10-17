@@ -2403,6 +2403,27 @@ public class KafkaAdminClientTest {
     }
 
     @Test
+    public void testDescribeLogDirsCordoned() throws ExecutionException, InterruptedException {
+        try (AdminClientUnitTestEnv env = mockClientEnv()) {
+            env.kafkaClient().setNodeApiVersions(NodeApiVersions.create());
+            env.kafkaClient().prepareResponseFrom(
+                new DescribeLogDirsResponse(new DescribeLogDirsResponseData().setResults(List.of(
+                    new DescribeLogDirsResponseData.DescribeLogDirsResult()
+                        .setErrorCode(Errors.NONE.code()).setLogDir("/cordoned").setIsCordoned(true),
+                    new DescribeLogDirsResponseData.DescribeLogDirsResult()
+                        .setErrorCode(Errors.NONE.code()).setLogDir("/open")))),
+                env.cluster().nodeById(0));
+
+            Map<String, LogDirDescription> descriptions = env.adminClient().describeLogDirs(singleton(0))
+                .allDescriptions().get().get(0);
+            assertTrue(descriptions.get("/cordoned").isCordoned());
+            assertFalse(descriptions.get("/open").isCordoned());
+            assertFalse(new LogDirDescription(null, Map.of()).isCordoned());
+            assertTrue(new LogDirDescription(null, Map.of(), 1L, 1L, true).isCordoned());
+        }
+    }
+
+    @Test
     public void testDescribeLogDirsOfflineDir() throws ExecutionException, InterruptedException {
         Set<Integer> brokers = singleton(0);
         String logDir = "/var/data/kafka";

@@ -24,7 +24,9 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.test.ClusterInstance;
+import org.apache.kafka.common.test.api.ClusterConfigProperty;
 import org.apache.kafka.common.test.api.ClusterTest;
+import org.apache.kafka.server.config.ServerLogConfigs;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -91,6 +93,20 @@ public class LogDirsCommandTest {
                     assertTrue(output.contains("\"partition\":\"" + topicPartition.get() + "\""));
                 });
             });
+        }
+    }
+
+    @ClusterTest(brokers = 2, serverProperties = {
+        @ClusterConfigProperty(id = 0, key = ServerLogConfigs.CORDONED_LOG_DIRS_CONFIG, value = ServerLogConfigs.CORDONED_LOG_DIRS_ALL)
+    })
+    public void testLogDirsShowsCordonedLogDirs(ClusterInstance clusterInstance) {
+        try (Admin admin = Admin.create(Map.of(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, clusterInstance.bootstrapServers()))) {
+            for (int brokerId : List.of(0, 1)) {
+                String output = assertDoesNotThrow(() -> execute(fromArgsToOptions("--bootstrap-server", clusterInstance.bootstrapServers(),
+                    "--broker-list", String.valueOf(brokerId), "--describe"), admin));
+                assertTrue(output.contains("\"isCordoned\":" + (brokerId == 0)), output);
+                assertFalse(output.contains("\"isCordoned\":" + (brokerId != 0)), output);
+            }
         }
     }
 

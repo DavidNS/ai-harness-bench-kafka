@@ -65,6 +65,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Random;
@@ -458,6 +459,9 @@ public class ClusterControlManager {
             record.setFenced(existing.fenced());
             record.setInControlledShutdown(existing.inControlledShutdown());
             record.setBrokerEpoch(existing.epoch());
+            if (featureControl.metadataVersionOrThrow().isCordonedLogDirsSupported()) {
+                record.setCordonedLogDirs(existing.cordonedDirectories());
+            }
         }
         records.add(new ApiMessageAndVersion(record, featureControl.metadataVersionOrThrow().
             registerBrokerRecordVersion()));
@@ -617,6 +621,7 @@ public class ClusterControlManager {
             record.epoch(),
             BrokerRegistrationFencingChange.FENCE.asBoolean(),
             BrokerRegistrationInControlledShutdownChange.NONE.asBoolean(),
+            Optional.empty(),
             Optional.empty()
         );
     }
@@ -628,6 +633,7 @@ public class ClusterControlManager {
             record.epoch(),
             BrokerRegistrationFencingChange.UNFENCE.asBoolean(),
             BrokerRegistrationInControlledShutdownChange.NONE.asBoolean(),
+            Optional.empty(),
             Optional.empty()
         );
     }
@@ -648,7 +654,8 @@ public class ClusterControlManager {
             record.brokerEpoch(),
             fencingChange.asBoolean(),
             inControlledShutdownChange.asBoolean(),
-            directoriesChange
+            directoriesChange,
+            Optional.ofNullable(record.cordonedLogDirs())
         );
     }
 
@@ -658,7 +665,8 @@ public class ClusterControlManager {
         long brokerEpoch,
         Optional<Boolean> fencingChange,
         Optional<Boolean> inControlledShutdownChange,
-        Optional<List<Uuid>> directoriesChange
+        Optional<List<Uuid>> directoriesChange,
+        Optional<List<Uuid>> cordonedDirectoriesChange
     ) {
         BrokerRegistration curRegistration = brokerRegistrations.get(brokerId);
         if (curRegistration == null) {
@@ -671,7 +679,8 @@ public class ClusterControlManager {
             BrokerRegistration nextRegistration = curRegistration.cloneWith(
                 fencingChange,
                 inControlledShutdownChange,
-                directoriesChange
+                directoriesChange,
+                cordonedDirectoriesChange
             );
             if (!curRegistration.equals(nextRegistration)) {
                 log.info("Replayed {} modifying the registration for broker {}: {}",
@@ -704,8 +713,43 @@ public class ClusterControlManager {
         if (heartbeatManager == null) {
             throw new RuntimeException("ClusterControlManager is not active.");
         }
-        return heartbeatManager.usableBrokers(
+        Iterator<UsableBroker> usableBrokers = heartbeatManager.usableBrokers(
             id -> brokerRegistrations.get(id).rack());
+        // Brokers whose log directories are all cordoned must not receive new partitions.
+        return new Iterator<>() {
+            private UsableBroker next = null;
+
+            @Override
+            public boolean hasNext() {
+                while (next == null && usableBrokers.hasNext()) {
+                    UsableBroker candidate = usableBrokers.next();
+                    if (hasUncordonedDir(candidate.id())) {
+                        next = candidate;
+                    }
+                }
+                return next != null;
+            }
+
+            @Override
+            public UsableBroker next() {
+                if (!hasNext()) {
+                    throw new NoSuchElementException();
+                }
+                UsableBroker result = next;
+                next = null;
+                return result;
+            }
+        };
+    }
+
+    /**
+     * Returns true if the broker has at least one log directory that new partitions can be placed on.
+     * Returns false if all of the broker's log directories are cordoned. Returns true if the
+     * broker is not registered.
+     */
+    public boolean hasUncordonedDir(int brokerId) {
+        BrokerRegistration registration = brokerRegistrations.get(brokerId);
+        return registration == null || registration.hasUncordonedDir();
     }
 
     /**

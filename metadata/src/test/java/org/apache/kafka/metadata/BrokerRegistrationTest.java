@@ -143,7 +143,11 @@ public class BrokerRegistrationTest {
     }
 
     private void testRoundTrip(BrokerRegistration registration) {
-        ImageWriterOptions options = new ImageWriterOptions.Builder(MetadataVersion.latestProduction()).build();
+        testRoundTrip(registration, MetadataVersion.latestProduction());
+    }
+
+    private void testRoundTrip(BrokerRegistration registration, MetadataVersion metadataVersion) {
+        ImageWriterOptions options = new ImageWriterOptions.Builder(metadataVersion).build();
         ApiMessageAndVersion messageAndVersion = registration.
             toRecord(options);
         BrokerRegistration registration2 = BrokerRegistration.fromRecord(
@@ -221,5 +225,67 @@ public class BrokerRegistrationTest {
         assertTrue(registration.hasOnlineDir(DirectoryId.MIGRATING));
         assertFalse(registration.hasOnlineDir(Uuid.fromString("sOwN7HH7S1maxpU1WzlzXg")));
         assertFalse(registration.hasOnlineDir(DirectoryId.LOST));
+    }
+
+    private static BrokerRegistration registrationWithDirs(List<Uuid> dirs, List<Uuid> cordoned) {
+        return new BrokerRegistration.Builder().
+            setId(0).
+            setEpoch(0).
+            setIncarnationId(Uuid.fromString("ik32HZbLTW6ulw1yyrC8jQ")).
+            setListeners(List.of(new Endpoint("INTERNAL", SecurityProtocol.PLAINTEXT, "localhost", 9090))).
+            setSupportedFeatures(Map.of("foo", VersionRange.of((short) 1, (short) 2))).
+            setDirectories(dirs).
+            setCordonedDirectories(cordoned).
+            build();
+    }
+
+    @Test
+    public void testHasUncordonedDir() {
+        Uuid dir1 = Uuid.fromString("3MWIBL9NR4eXhtdfBVA7Bw");
+        Uuid dir2 = Uuid.fromString("SZQIVeLMQGiNi68StNSNZA");
+        assertTrue(registrationWithDirs(List.of(dir1, dir2), List.of()).hasUncordonedDir());
+        assertTrue(registrationWithDirs(List.of(dir1, dir2), List.of(dir1)).hasUncordonedDir());
+        assertFalse(registrationWithDirs(List.of(dir1, dir2), List.of(dir2, dir1)).hasUncordonedDir());
+        // Brokers which don't report directories are never considered cordoned
+        assertTrue(registrationWithDirs(List.of(), List.of()).hasUncordonedDir());
+        assertTrue(registrationWithDirs(List.of(dir1, dir2), List.of(dir1)).isDirCordoned(dir1));
+        assertFalse(registrationWithDirs(List.of(dir1, dir2), List.of(dir1)).isDirCordoned(dir2));
+    }
+
+    @Test
+    public void testCordonedDirectoriesRoundTripAndLoss() {
+        Uuid dir1 = Uuid.fromString("3MWIBL9NR4eXhtdfBVA7Bw");
+        Uuid dir2 = Uuid.fromString("SZQIVeLMQGiNi68StNSNZA");
+        BrokerRegistration registration = registrationWithDirs(List.of(dir1, dir2), List.of(dir2));
+        testRoundTrip(registration, MetadataVersion.IBP_4_3_IV0);
+        assertTrue(registration.toString().endsWith(", cordonedDirectories=[" + dir2 + "])"));
+
+        // Older metadata versions can't store the cordoned directories
+        ImageWriterOptions oldOptions = new ImageWriterOptions.Builder(MetadataVersion.IBP_4_2_IV1).
+            setLossHandler(loss -> { }).build();
+        RegisterBrokerRecord record = (RegisterBrokerRecord) registration.toRecord(oldOptions).message();
+        assertEquals(List.of(), record.cordonedLogDirs());
+        ImageWriterOptions newOptions = new ImageWriterOptions.Builder(MetadataVersion.IBP_4_3_IV0).build();
+        assertEquals((short) 4, registration.toRecord(newOptions).version());
+        assertEquals(List.of(dir2), ((RegisterBrokerRecord) registration.toRecord(newOptions).message()).cordonedLogDirs());
+    }
+
+    @Test
+    public void testCloneWithCordonedDirectories() {
+        Uuid dir1 = Uuid.fromString("3MWIBL9NR4eXhtdfBVA7Bw");
+        Uuid dir2 = Uuid.fromString("SZQIVeLMQGiNi68StNSNZA");
+        BrokerRegistration registration = registrationWithDirs(List.of(dir1, dir2), List.of());
+        BrokerRegistration cordoned = registration.cloneWith(
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of(dir1)));
+        assertEquals(List.of(dir1), cordoned.cordonedDirectories());
+        assertNotEquals(registration, cordoned);
+        // No change returns the same instance
+        assertTrue(cordoned == cordoned.cloneWith(
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of(dir1))));
+        // The three argument variant leaves the cordoned directories alone
+        assertEquals(List.of(dir1), cordoned.cloneWith(
+            Optional.of(true), Optional.empty(), Optional.empty()).cordonedDirectories());
+        assertEquals(List.of(), cordoned.cloneWith(
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(List.of())).cordonedDirectories());
     }
 }
